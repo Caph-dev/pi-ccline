@@ -73,7 +73,7 @@ cwd = 本包根目录。以下均已验证。
 
 **不存在** `build` / `lint` / `format` / `typecheck` / `watch` / `clean` 脚本，也没有 `tsconfig.json`、ESLint、Prettier、lockfile、CI。不要假设它们存在或顺手加。
 
-`pi install ./packages/pi-ccline` 会写 `~/.pi/agent/settings.json`，只在用户明确要求时用；验证一律用 `pi -e`。
+`pi install npm:@caph42/pi-ccline`（或本地 `pi install .`）会写 `~/.pi/agent/settings.json`，只在用户明确要求时用；验证一律用 `pi -e`。
 
 ## Code Conventions & Common Patterns
 
