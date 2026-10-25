@@ -28,7 +28,8 @@
 		"extensions",
 		"scripts",
 		"fixtures",
-		"README.md"
+		"README.md",
+		"README_zh.md"
 	],
 	"pi": {
 		"extensions": [

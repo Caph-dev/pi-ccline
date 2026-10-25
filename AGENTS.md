@@ -50,7 +50,7 @@ flowchart LR
 | `extensions/pi-ccline/` | 全部源码，6 个运行模块 + 6 个同名 `.test.ts`（无 `src/`） |
 | `scripts/render-once.ts` | 人工验收：fixture → 真实 ccline → 打印 ANSI 与可见宽度 |
 | `fixtures/basic.json` | ccline 输入样例，只给 `render-once` 用，测试不读它 |
-| `README.md` / `HANDOFF.md` | 用户契约 / 历史任务书 + 修复记录（中文） |
+| `README.md` / `README_zh.md` / `HANDOFF.md` | 用户契约（英文）/ 同一份契约的中文版 / 历史任务书 + 修复记录（中文） |
 
 本包位于 `~/Workspace/pi-packages/pi-ccline`，与 `pi-advisor`、`pi-cursor-provider` 等平级；每个目录是独立项目，各有不同 toolchain（Bun / tsc / 各自 CI），**不要**把它们的约定搬过来。
 
@@ -105,7 +105,7 @@ cwd = 本包根目录。以下均已验证。
 - 路径固定 `join(homedir(), ".pi", "agent", "pi-ccline", "config.json")`；读取同步且宽容，写入 temp + `renameSync` 原子替换；数值 clamp（`timeoutMs` 200–60000，`refreshThrottleMs` ≥1000，`liveRefreshMs` 0 或 ≥250，上限均 60000）。
 
 **渲染与文案**
-- 用户可见文案英文、紧凑、`·` 分隔（`ccline not found · npm i -g @cometix/ccline · …`）；代码注释英文且解释「为什么」；README / HANDOFF 中文。
+- 用户可见文案英文、紧凑、`·` 分隔（`ccline not found · npm i -g @cometix/ccline · …`）；代码注释英文且解释「为什么」；README 英文（`README_zh.md` 为中文版，改任一份要同步另一份），HANDOFF 中文。
 - 其他扩展的 `ctx.ui.setStatus` 必须继续可见：`render()` 实时读 `footerData.getExtensionStatuses()`，按 key 排序拼一行，超宽用 dim `…` 截断。
 
 **已知偏差（改到相关代码时留意）**
@@ -136,7 +136,7 @@ cwd = 本包根目录。以下均已验证。
 - **pi 宿主条款**：`pi-ai` / `pi-agent-core` / `pi-coding-agent` / `pi-tui` / `typebox` 必须留在 `peerDependencies: "*"`，不能进 `dependencies`。pi 用 jiti 直接加载 `.ts`，因此**不需要也不要加**构建步骤。
 - **外部二进制 `ccline` 2.0.1** 是硬前提：1.1.x 会把 `model`/`workspace`/`transcript_path` 当必填而失败。上游升级大版本后必须用 `render-once` 复验。
 - **git 仓库**：`main` 分支，远端 `Caph-dev/pi-ccline`。发布流程为手动：`npm version <patch|minor|major>` → `git push --follow-tags` → `npm publish`（`publishConfig.access = public`）。没有 CI、changeset，测试需在发版前本地跑绿。
-- npm tarball 内容由 `package.json` 的 `files` 控制：`extensions/`、`scripts/`、`fixtures/`、`README.md`。`HANDOFF.md` 与 `AGENTS.md` 只留在仓库里，不进包。
+- npm tarball 内容由 `package.json` 的 `files` 控制：`extensions/`、`scripts/`、`fixtures/`、`README.md`、`README_zh.md`。`HANDOFF.md` 与 `AGENTS.md` 只留在仓库里，不进包。
 
 ## Testing & QA
 
