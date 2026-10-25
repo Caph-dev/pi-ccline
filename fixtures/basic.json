@@ -1,7 +1,7 @@
 {
-  "cwd": "/Users/caph/Workspace/pi-packages/packages/pi-ccline",
+  "cwd": "/Users/caph/Workspace/pi-packages/pi-ccline",
   "workspace": {
-    "current_dir": "/Users/caph/Workspace/pi-packages/packages/pi-ccline"
+    "current_dir": "/Users/caph/Workspace/pi-packages/pi-ccline"
   },
   "model": {
     "id": "gpt-5.6-codex",

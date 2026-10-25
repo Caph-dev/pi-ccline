@@ -114,4 +114,4 @@ package.json
   - `dist/core/extensions/types.d.ts`（`setFooter`、`ContextUsage`、`ExtensionContext`）
   - `dist/core/footer-data-provider.d.ts`（`getGitBranch` / `onBranchChange` / `getExtensionStatuses`）
 - 上游：`https://github.com/Haleclipse/CCometixLine`（`src/input.rs` 定义 stdin schema）
-- 工作目录就是包根（`~/Workspace/pi-packages/packages/pi-ccline`），不要改 `../../` 下的其它包。
+- 工作目录就是包根（`~/Workspace/pi-packages/pi-ccline`），不要改 `../` 下的其它包。
