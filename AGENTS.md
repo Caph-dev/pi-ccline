@@ -52,7 +52,7 @@ flowchart LR
 | `fixtures/basic.json` | ccline 输入样例，只给 `render-once` 用，测试不读它 |
 | `README.md` / `HANDOFF.md` | 用户契约 / 历史任务书 + 修复记录（中文） |
 
-`packages/pi-ccline` 是 `pi-packages` 下唯一包；其它项目（`pi-advisor`、`pi-cursor-provider` 等）在 `pi-packages/` 根下平级，各有不同 toolchain（Bun / tsc / 各自 CI），**不要**把它们的约定搬过来。
+本包位于 `~/Workspace/pi-packages/pi-ccline`，与 `pi-advisor`、`pi-cursor-provider` 等平级；每个目录是独立项目，各有不同 toolchain（Bun / tsc / 各自 CI），**不要**把它们的约定搬过来。
 
 ## Development Commands
 
