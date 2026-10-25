@@ -1,0 +1,49 @@
+{
+	"name": "@caph42/pi-ccline",
+	"version": "0.1.0",
+	"description": "Pi extension that renders the footer by delegating to the CCometixLine (ccline) statusline binary",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"pi-coding-agent",
+		"statusline",
+		"footer",
+		"ccline",
+		"cometix"
+	],
+	"license": "MIT",
+	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Caph-dev/pi-ccline.git"
+	},
+	"homepage": "https://github.com/Caph-dev/pi-ccline#readme",
+	"bugs": {
+		"url": "https://github.com/Caph-dev/pi-ccline/issues"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"files": [
+		"extensions",
+		"scripts",
+		"fixtures",
+		"README.md"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions/pi-ccline/index.ts"
+		]
+	},
+	"scripts": {
+		"test": "node --test",
+		"render-once": "node --experimental-strip-types scripts/render-once.ts"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
+	},
+	"publishConfig": {
+		"access": "public"
+	}
+}

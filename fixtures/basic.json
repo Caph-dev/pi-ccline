@@ -1,0 +1,26 @@
+{
+  "cwd": "/Users/caph/Workspace/pi-packages/packages/pi-ccline",
+  "workspace": {
+    "current_dir": "/Users/caph/Workspace/pi-packages/packages/pi-ccline"
+  },
+  "model": {
+    "id": "gpt-5.6-codex",
+    "display_name": "GPT-5.6 Codex (openai-codex)"
+  },
+  "effort": {
+    "level": "high"
+  },
+  "context_window": {
+    "context_window_size": 272000,
+    "current_usage": {
+      "input_tokens": 42000
+    },
+    "used_percentage": 15.4
+  },
+  "cost": {
+    "total_cost_usd": 1.2345,
+    "total_duration_ms": 1830000
+  },
+  "session_id": "4f8f2c1a-0000-4000-8000-000000000000",
+  "session_name": "pi-ccline demo"
+}
