@@ -1,6 +1,6 @@
 {
 	"name": "@caph42/pi-ccline",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "Pi extension that renders the footer by delegating to the CCometixLine (ccline) statusline binary",
 	"keywords": [
 		"pi-package",
