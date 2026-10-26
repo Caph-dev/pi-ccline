@@ -35,6 +35,40 @@ export function sanitizeStatusText(text: string): string {
 	return text.replace(/[\r\n\t]/g, " ").replace(/ +/g, " ").trim();
 }
 
+/** The badge fields this module needs; config.ts owns the validated shape. */
+export type StatusBadgeLike = { icon?: string | undefined; color?: string | undefined };
+
+export interface StatusLineOptions {
+	/** Badges per status key; a key without an entry stays plain text. */
+	badges?: Readonly<Record<string, StatusBadgeLike>> | null | undefined;
+	/** Theme colorizer for the badge color token; missing or throwing means plain text. */
+	colorize?: ((color: string, text: string) => string) | null | undefined;
+}
+
+/**
+ * A status arrives from another extension as text, and that extension may or
+ * may not have colored it. A badge adds an icon and a color — but only to a
+ * status that did not style itself, so an extension that already uses
+ * `theme.fg` keeps its own palette instead of ending up half-colored.
+ */
+function withBadge(key: string, text: string, options: StatusLineOptions): string {
+	const badges = options.badges;
+	// Own properties only: a status key like `toString` must not resolve to the
+	// object's inherited members.
+	const badge = badges && Object.hasOwn(badges, key) ? badges[key] : undefined;
+	if (!badge) return text;
+	if (text.includes("\u001b[")) return text;
+	const label = badge.icon ? `${badge.icon} ${text}` : text;
+	const colorize = options.colorize;
+	if (!badge.color || !colorize) return label;
+	try {
+		return colorize(badge.color, label);
+	} catch {
+		// An unknown theme token must not cost the row its text.
+		return label;
+	}
+}
+
 /**
  * pi's built-in footer puts every extension status on one extra row, sorted by
  * key and joined by a space. Mirror that so `ctx.ui.setStatus` keeps working
@@ -44,12 +78,14 @@ export function extensionStatusLine(
 	statuses: Iterable<[string, string]> | null | undefined,
 	width: number,
 	ellipsis = "…",
+	options: StatusLineOptions = {},
 ): string | null {
 	if (!statuses) return null;
 	const text = [...statuses]
 		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([, value]) => sanitizeStatusText(value))
-		.filter((value) => value.length > 0)
+		.map(([key, value]) => ({ key, text: sanitizeStatusText(value) }))
+		.filter((status) => status.text.length > 0)
+		.map((status) => withBadge(status.key, status.text, options))
 		.join(" ");
 	if (!text) return null;
 	const safeWidth = Math.max(1, Math.floor(width));

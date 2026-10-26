@@ -7,7 +7,7 @@ import { afterEach, test } from "node:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { clearBinaryCache } from "./binary.ts";
-import { DEFAULT_CONFIG, type PiCclineConfig } from "./config.ts";
+import { DEFAULT_CONFIG, DEFAULT_STATUS_BADGES, type PiCclineConfig } from "./config.ts";
 import { CclineFooter, default as piCcline } from "./index.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -195,6 +195,33 @@ test("shows extension statuses even before ccline has produced a frame", () => {
 	assert.equal(lines.length, 2);
 	assert.match(lines[0] ?? "", /ccline/);
 	assert.equal(lines[1], "Cursor fast: off");
+	harness.footer.dispose();
+});
+
+test("the built-in poteto-mode badge decorates the pi-herdr-pstack status", () => {
+	// The fake theme wraps everything in dim, so the marker proves the badge color
+	// path ran through theme.fg rather than being pasted on unconditionally.
+	const statuses = new Map([
+		["pi-herdr-pstack", "poteto-mode"],
+		["other-plugin", "Other status"],
+	]);
+	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'") }, undefined, statuses);
+	const [statusRow] = harness.render(80).slice(1);
+	assert.equal(statusRow?.replace(/\u001b\[[0-9;]*m/g, ""), `Other status ${DEFAULT_STATUS_BADGES["pi-herdr-pstack"]?.icon} poteto-mode`);
+	assert.match(statusRow ?? "", /\u001b\[2m/, "the badge is colored through the theme");
+	harness.footer.dispose();
+});
+
+test("a configured badge override reaches the rendered row", () => {
+	const statuses = new Map([["pi-herdr-pstack", "poteto-mode"]]);
+	const harness = attach(
+		{ binary: fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'"), statusBadges: { "pi-herdr-pstack": { icon: "" } } },
+		undefined,
+		statuses,
+	);
+	const row = harness.render(80)[1] ?? "";
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), "poteto-mode");
+	assert.match(row, /\u001b\[2m/, "clearing the icon keeps the configured color");
 	harness.footer.dispose();
 });
 

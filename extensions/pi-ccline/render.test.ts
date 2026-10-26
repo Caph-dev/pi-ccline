@@ -89,3 +89,60 @@ test("a long status row is truncated by visible width with the dim ellipsis", ()
 	assert.ok(visibleWidth(row) <= 10, `visible width was ${visibleWidth(row ?? "")}`);
 	assert.ok((row ?? "").replace(/\u001b\[[0-9;]*m/g, "").endsWith("..."));
 });
+
+test("a badge adds its icon and color to the matching status key only", () => {
+	const statuses = new Map([
+		["mcp", "connected"],
+		["pi-herdr-pstack", "poteto-mode"],
+	]);
+	const line = extensionStatusLine(statuses, 80, "…", {
+		badges: { "pi-herdr-pstack": { icon: "R", color: "accent" } },
+		colorize: (color, text) => `[${color}]${text}`,
+	});
+	assert.equal(line, "connected [accent]R poteto-mode");
+});
+
+test("a status that colors itself keeps its own styling", () => {
+	const statuses = new Map([["pi-herdr-pstack", `${RED}poteto-mode${RESET}`]]);
+	const line = extensionStatusLine(statuses, 80, "…", {
+		badges: { "pi-herdr-pstack": { icon: "R", color: "accent" } },
+		colorize: (color, text) => `[${color}]${text}`,
+	});
+	assert.equal(line, `${RED}poteto-mode${RESET}`);
+});
+
+test("an unknown theme token falls back to the plain badge label", () => {
+	const line = extensionStatusLine(new Map([["k", "v"]]), 80, "…", {
+		badges: { k: { icon: "R", color: "nope" } },
+		colorize: () => {
+			throw new Error("Unknown theme color: nope");
+		},
+	});
+	assert.equal(line, "R v");
+});
+
+test("an icon with no color still shows, and an empty icon adds no gap", () => {
+	const badges = { a: { icon: "R" }, b: { icon: "", color: "accent" } };
+	const line = extensionStatusLine(new Map([["a", "one"], ["b", "two"]]), 80, "…", {
+		badges,
+		colorize: (color, text) => `[${color}]${text}`,
+	});
+	assert.equal(line, "R one [accent]two");
+});
+
+test("only own badge entries are applied, never inherited object members", () => {
+	const line = extensionStatusLine(new Map([["toString", "v"]]), 80, "…", {
+		badges: {},
+		colorize: (color, text) => `[${color}]${text}`,
+	});
+	assert.equal(line, "v");
+});
+
+test("the badge counts toward the truncated width", () => {
+	const row = extensionStatusLine(new Map([["k", "日".repeat(10)]]), 10, "...", {
+		badges: { k: { icon: "R", color: "accent" } },
+		colorize: (color, text) => `\u001b[35m${text}\u001b[39m`,
+	});
+	assert.ok(row !== null);
+	assert.ok(visibleWidth(row) <= 10, `visible width was ${visibleWidth(row ?? "")}`);
+});

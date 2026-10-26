@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { clearBinaryCache, probeVersion, resolveBinary, spawnCcline, type ResolvedBinary } from "./binary.ts";
-import { loadConfig, saveConfig, type PiCclineConfig } from "./config.ts";
+import { loadConfig, resolveStatusBadges, saveConfig, type PiCclineConfig, type StatusBadge } from "./config.ts";
 import { buildCclineInput, collectSnapshot } from "./input.ts";
 import { RefreshScheduler, RefreshTicker } from "./refresh.ts";
 import { extensionStatusLine, loadingNotice, missingBinaryNotice, normalizeFrame, noticeFrame, withStaleMarker } from "./render.ts";
@@ -57,6 +57,8 @@ function firstLine(text: string): string {
 export class CclineFooter {
 	private readonly ctx: ExtensionContext;
 	private readonly config: PiCclineConfig;
+	/** Built-in badges with the user's overrides already merged, resolved once. */
+	private readonly badges: Record<string, StatusBadge>;
 	private readonly scheduler: RefreshScheduler;
 	/** Only runs while the agent is active so an idle session spawns nothing. */
 	private readonly ticker: RefreshTicker;
@@ -91,6 +93,7 @@ export class CclineFooter {
 	constructor(ctx: ExtensionContext, config: PiCclineConfig) {
 		this.ctx = ctx;
 		this.config = config;
+		this.badges = resolveStatusBadges(config.statusBadges);
 		this.scheduler = new RefreshScheduler({
 			throttleMs: config.refreshThrottleMs,
 			task: () => this.refresh(),
@@ -283,7 +286,11 @@ export class CclineFooter {
 				return null;
 			}
 		})();
-		const status = extensionStatusLine(statuses, safeWidth, this.theme ? this.theme.fg("dim", "…") : "…");
+		const status = extensionStatusLine(statuses, safeWidth, this.theme ? this.theme.fg("dim", "…") : "…", {
+			badges: this.badges,
+			// render.ts catches a throwing token, so a stale theme entry costs only its color.
+			colorize: this.theme ? (color, text) => this.theme?.fg(color, text) ?? text : null,
+		});
 		return status ? [...lines, status] : lines;
 	}
 

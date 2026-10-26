@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { DEFAULT_CONFIG, MIN_LIVE_REFRESH_MS, MIN_THROTTLE_MS, configPath, loadConfig, normalizeConfig, saveConfig } from "./config.ts";
+import { DEFAULT_CONFIG, DEFAULT_STATUS_BADGES, MIN_LIVE_REFRESH_MS, MIN_THROTTLE_MS, configPath, loadConfig, normalizeConfig, resolveStatusBadges, saveConfig } from "./config.ts";
 
 function tempDir(): string {
 	return mkdtempSync(join(tmpdir(), "pi-ccline-config-"));
@@ -53,7 +53,56 @@ test("keeps valid overrides", () => {
 		liveRefreshMs: DEFAULT_CONFIG.liveRefreshMs,
 		showProvider: DEFAULT_CONFIG.showProvider,
 		env: {},
+		statusBadges: {},
 	});
+});
+
+test("ships a built-in poteto-mode badge and lets the config override it field by field", () => {
+	assert.deepEqual(DEFAULT_CONFIG.statusBadges, {});
+	assert.deepEqual(resolveStatusBadges(undefined), DEFAULT_STATUS_BADGES);
+
+	// Clearing only the icon keeps the built-in color.
+	const noIcon = normalizeConfig({ statusBadges: { "pi-herdr-pstack": { icon: "" } } });
+	assert.deepEqual(resolveStatusBadges(noIcon.statusBadges), { "pi-herdr-pstack": { icon: "", color: "accent" } });
+
+	// A color-only override reuses the built-in icon.
+	const recolored = normalizeConfig({ statusBadges: { "pi-herdr-pstack": { color: "warning" } } });
+	assert.deepEqual(resolveStatusBadges(recolored.statusBadges), { "pi-herdr-pstack": { icon: DEFAULT_STATUS_BADGES["pi-herdr-pstack"]?.icon, color: "warning" } });
+});
+
+test("badges can be added for other status keys, and unusable entries are dropped", () => {
+	const config = normalizeConfig({
+		statusBadges: {
+			"ssh-remote": { color: "success" },
+			" ssh-remote ": { color: "error" },
+			["x".repeat(65)]: { icon: "y" },
+			mcp: { icon: "\n\t" },
+			broken: 5,
+			"": { icon: "x" },
+		},
+	});
+	// Keys are matched verbatim against `setStatus` keys, so a padded or oversized
+	// key is dropped rather than rewritten into something that can only miss.
+	assert.deepEqual(config.statusBadges, { "ssh-remote": { color: "success" } });
+});
+
+test("prototype-named keys stay own data properties", () => {
+	// Only JSON can carry an own `__proto__` key; an object literal would set the prototype.
+	const raw = JSON.parse('{"statusBadges":{"constructor":{"icon":"C"},"__proto__":{"color":"error"}}}');
+	const config = normalizeConfig(raw);
+	const resolved = resolveStatusBadges(config.statusBadges);
+	assert.equal(Object.hasOwn(resolved, "constructor"), true);
+	assert.equal(Object.hasOwn(resolved, "__proto__"), true);
+	assert.equal(Object.getPrototypeOf(resolved), Object.prototype);
+	assert.deepEqual(resolved.constructor, { icon: "C", color: "" });
+	assert.deepEqual(resolved["__proto__"], { icon: "", color: "error" });
+});
+
+test("a badge icon is cleaned and capped instead of breaking the status row", () => {
+	const [icon = ""] = Object.values(normalizeConfig({ statusBadges: { k: { icon: "  \u001b[31mabcde  " } } }).statusBadges);
+	assert.deepEqual(icon, { icon: "abcd" });
+	assert.deepEqual(normalizeConfig({ statusBadges: [] }).statusBadges, {});
+	assert.deepEqual(normalizeConfig({ statusBadges: "none" }).statusBadges, {});
 });
 
 test("showProvider defaults on and ignores non-boolean values", () => {
