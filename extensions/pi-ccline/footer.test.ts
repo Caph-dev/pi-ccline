@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -318,7 +318,7 @@ function fakePi() {
 		},
 		registerCommand: () => {},
 	};
-	const dispatch = (name: string, ctx: unknown) => handlers.get(name)?.({ type: name }, ctx);
+	const dispatch = (name: string, ctx: unknown, event: Record<string, unknown> = {}) => handlers.get(name)?.({ type: name, ...event }, ctx);
 	return { pi, handlers, dispatch };
 }
 
@@ -381,6 +381,70 @@ test("agent_start ticks the footer and agent_end leaves no periodic refresh behi
 	assert.equal(countSpawns(counter), drained, "no periodic refresh once the run ended");
 
 	await dispatch("session_shutdown", ctx);
+});
+
+test("writes ccline's timing bridge from the streamed answer", async () => {
+	const cclineHome = tempDir("pi-ccline-bridge-");
+	const previousHome = process.env.CCLINE_HOME;
+	process.env.CCLINE_HOME = cclineHome;
+	try {
+		const binary = fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'");
+		const { pi, handlers, dispatch } = fakePi();
+		piCcline(pi as never, { loadConfig: () => ({ ...DEFAULT_CONFIG, binary }) });
+		for (const event of ["message_start", "message_update", "message_end"]) {
+			assert.ok(handlers.has(event), `${event} is wired`);
+		}
+
+		const { ctx } = fakeSession({ idle: true, binary });
+		await dispatch("session_start", ctx);
+
+		const assistant = { role: "assistant", model: "claude-sonnet-4-5", usage: { output: 500 } };
+		await dispatch("message_start", ctx, { message: assistant });
+		await sleep(120);
+		await dispatch("message_update", ctx, { message: assistant });
+		await sleep(220);
+		await dispatch("message_end", ctx, { message: assistant });
+
+		const bridge = JSON.parse(readFileSync(join(cclineHome, "bridge", "sess-1.json"), "utf8"));
+		assert.equal(bridge.v, 1);
+		assert.equal(bridge.session, "sess-1");
+		assert.equal(bridge.turn.model, "claude-sonnet-4-5");
+		assert.equal(bridge.turn.output_tokens, 500);
+		assert.ok(bridge.turn.ttft_ms >= 100, "ttft covers the wait before the first token");
+		assert.ok(bridge.turn.tps > 0 && Number.isFinite(bridge.turn.tps));
+
+		await dispatch("session_shutdown", ctx);
+		assert.equal(existsSync(join(cclineHome, "bridge", "sess-1.json")), false, "a closed session leaves no bridge");
+	} finally {
+		if (previousHome === undefined) delete process.env.CCLINE_HOME;
+		else process.env.CCLINE_HOME = previousHome;
+	}
+});
+
+test("ignores message events that are not the assistant's answer", async () => {
+	const cclineHome = tempDir("pi-ccline-bridge-role-");
+	const previousHome = process.env.CCLINE_HOME;
+	process.env.CCLINE_HOME = cclineHome;
+	try {
+		const binary = fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'");
+		const { pi, dispatch } = fakePi();
+		piCcline(pi as never, { loadConfig: () => ({ ...DEFAULT_CONFIG, binary }) });
+		const { ctx } = fakeSession({ idle: true, binary });
+		await dispatch("session_start", ctx);
+
+		// A user message or tool result carries no model timing.
+		for (const role of ["user", "toolResult"]) {
+			const message = { role, usage: { output: 500 } };
+			await dispatch("message_start", ctx, { message });
+			await dispatch("message_update", ctx, { message });
+			await dispatch("message_end", ctx, { message });
+		}
+		assert.equal(existsSync(join(cclineHome, "bridge")), false, "no timing is attributed to non-answers");
+		await dispatch("session_shutdown", ctx);
+	} finally {
+		if (previousHome === undefined) delete process.env.CCLINE_HOME;
+		else process.env.CCLINE_HOME = previousHome;
+	}
 });
 
 test("a footer installed mid-run ticks without waiting for the next turn", async () => {

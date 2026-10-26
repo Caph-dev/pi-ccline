@@ -18,12 +18,14 @@ pi session state → buildCclineInput() → JSON → ccline (spawn, COLUMNS=curr
 | Reasoning effort | `ctx.thinkingLevel` → `effort.level` |
 | Working directory | `ctx.cwd` → `cwd` / `workspace.current_dir` |
 | Context percentage / token count | `ctx.getContextUsage()` → current context (the aggregate estimate); **no lifetime session tokens are sent** |
+| Prompt-cache hit share | assistant messages' `usage.cacheRead` over `input + cacheRead + cacheWrite`, summed over the branch → `prompt_cache.hit_ratio`; sent from the second request on |
+| Output speed (`tok/s`) | measured from `message_start` → first `message_update` → `message_end`, written to ccline's `bridge/<session>.json` for its `timing.tps` metric |
 | Cost, session duration | assistant messages' `usage.cost.total` summed; duration = now − earliest entry on the branch |
 | Session id / name | `ctx.sessionManager` |
 | git branch and anything else ccline probes itself | ccline reads the disk itself |
 | Status lines from other extensions | `footerData.getExtensionStatuses()`, sorted by key into one line below the ccline frame |
 
-Not shown, and never fabricated: the 5h / 7d quota segment (pi has no `rate_limits` source, the field is omitted, and the segment disappears by itself).
+Not shown, and never fabricated: the 5h / 7d quota segment (pi has no `rate_limits` source, the field is omitted, and the segment disappears by itself), and the cache warmth / TTL / miss-cause fields (pi knows neither the provider's cache expiry nor why a cache was rebuilt, so only the hit share is sent and ccline is left to hide the rest).
 
 ## Installation
 
@@ -102,6 +104,8 @@ Binary resolution order: `config.binary` → `~/.claude/ccline/ccline` → `ccli
 - Because there is only one footer slot globally, other extensions' custom footers (e.g. pi-cursor-provider's fast badge) get displaced once this extension is installed; their status lines still show. Conversely, when they take over, the ccline frame disappears and `/pi-ccline on` takes it back.
 - **The provider can only be folded into the model segment.** ccline 2.0.1's input schema has no provider field and the `model` segment renders only `display_name`, so the provider is appended after the model name as `name (provider)`; it isn't appended twice when the name already carries the same suffix. `showProvider: false` turns it off. **At narrow widths the provider may be invisible**: ccline wraps/truncates by `COLUMNS` itself, and in practice at width 40 the model segment is left with just `GPT-5.6` — that's upstream layout behaviour, and this extension only guarantees the provider is written into `display_name`.
 - The input JSON **omits the `version` field**: ccline 2.0.1 validates it as a Claude Code version and rejects pi's version outright.
+- **Cache hit share:** `prompt_cache` is sent only from the second assistant message on. That is ccline's own display gate (`requests > 1`), whose rationale is that a single request usually only writes the cache — an initial request can still hit a prefix cached by an earlier session, so the gate is display behaviour, not a claim about request #1. Sending `hit_ratio` before that gate would also make ccline fall back to its "cold" wording, which pi cannot assert. `current_usage` deliberately still carries only `input_tokens`: pi's context estimate already includes the cached tokens, and ccline sums the `current_usage` fields when `total_input_tokens` is absent, so adding the cache counts there would double-count them in the context bar.
+- **Output speed goes through ccline's bridge, not stdin.** ccline's `timing.tps` / `timing.ttft` metrics read `bridge/<session>.json` under its data dir (`$CCLINE_HOME` or `~/.claude/ccline`), the file its companion mod writes inside Claude Code. The statusline payload has no per-request timing, so this extension measures it from `message_start` / `message_update` / `message_end` and writes the same documented `v: 1` shape, atomically, once per finished answer. ttft is stream start → first content block; pi emits `message_start` when the provider starts responding, so that number excludes the connect wait. tps divides the answer's output tokens by the time from the first content block to `message_end`, so the wait for the first token is not counted as generation. Durations use a monotonic clock (`performance.now()`); only the bridge's freshness stamp is wall-clock. The file is removed on `session_shutdown`, and ccline ignores bridges older than 6h.
 - No runtime dependencies: only `node:child_process` / `node:fs` / `node:os` / `node:path` plus the pi peer package `@earendil-works/pi-tui`.
 - Non-TUI modes (`-p`, json, rpc) install no footer and spawn nothing.
 - The extension's own config lives at `~/.pi/agent/pi-ccline/config.json`; pi's `settings.json` is never touched.
@@ -129,7 +133,9 @@ node --experimental-strip-types scripts/render-once.ts --home "$(mktemp -d)" --b
 ## Known limitations
 
 - **The 5h / 7d quota segment is always empty.** pi provides no `rate_limits`, the field is omitted entirely, and ccline shows nothing.
-- **ccline writes `~/.claude/ccline/state/`** (session state, model cache, update.lock). That's upstream behaviour and cannot be disabled here.
+- **ccline writes `~/.claude/ccline/state/`** (session state, model cache, update.lock). That's upstream behaviour and cannot be disabled here. The extension additionally writes `~/.claude/ccline/bridge/<session>.json` for the `timing.tps` segment, and deletes it when the session shuts down.
+- **The cache segment shows only the hit share.** Warmth, TTL countdown, miss counts and miss causes need data pi does not have (the provider's cache expiry and rebuild reasons), so those fields are omitted — with a config `format` of `{hit}% hit` the segment reduces to that one number, and before the second request it disappears entirely rather than claiming "cold".
+- **`tok/s` describes the last finished answer, not a running average.** It is measured per request and only updates when an answer ends (a non-streaming provider, or a streamed answer of a few tokens, produces no sample and leaves the previous value on screen until the next one arrives). `duration` and `tok/s` are unrelated numbers: duration is session wall-clock, tps is streaming speed.
 - **External binary required.** Without `ccline` the footer is a single install hint; upgrading `ccline` needs no extension restart, but the binary path stays cached until the next resolution (`/pi-ccline on` or a new session recomputes it).
 - **Upstream compatibility only covers tested versions.** Every field in ccline 2.0.1's `input.rs` is `Option` with lenient deserialization, so a field changing shape within the same major version usually just makes that segment disappear; but required fields have changed across majors before (1.1.x → 2.0.x), so re-run `scripts/render-once.ts` after upgrading ccline.
 - **Nerd Font v3+ required.** Missing icon fonts render as boxes; Windows is untested.
@@ -150,6 +156,7 @@ extensions/pi-ccline/
   binary.ts   path resolution/caching, spawn with timeout and abort, --version probing
   render.ts   output normalization: line splitting, truncation by visible width, stale marker
   refresh.ts  single-flight + throttle + latest-wins scheduler, and the timer that drives `duration`
+  turn.ts     per-request timing from the stream, plus the ccline bridge file for `timing.tps`
   config.ts   config read/write
   *.test.ts   node --test
 scripts/render-once.ts   run the real ccline once against a fixture

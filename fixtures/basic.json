@@ -18,9 +18,13 @@
     "used_percentage": 15.4
   },
   "cost": {
-    "total_cost_usd": 1.2345,
-    "total_duration_ms": 1830000
+    "total_cost_usd": 0.54,
+    "total_duration_ms": 1800000
   },
-  "session_id": "4f8f2c1a-0000-4000-8000-000000000000",
-  "session_name": "pi-ccline demo"
+  "session_id": "sess-demo",
+  "session_name": "pi-ccline demo",
+  "prompt_cache": {
+    "requests": 2,
+    "hit_ratio": 0.9863
+  }
 }

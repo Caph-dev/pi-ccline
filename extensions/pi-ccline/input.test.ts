@@ -185,7 +185,29 @@ test("collectSnapshot sums only assistant usage on the branch", () => {
 test("collectSnapshot reports no totals for an empty branch", () => {
 	const snapshotValue = collectSnapshot(fakeContext([]), Date.now());
 	assert.equal(snapshotValue.totals, undefined);
+	assert.equal(snapshotValue.cache, undefined);
 	assert.equal(snapshotValue.session?.name, "named");
+});
+
+test("collectSnapshot sums prompt-cache reuse over the branch", () => {
+	const branch: BranchEntryLike[] = [
+		entry({ type: "message", message: { role: "user" } }),
+		entry({ type: "message", message: { role: "assistant", usage: { input: 100, cacheRead: 300, cacheWrite: 100 } } }),
+		entry({ type: "message", message: { role: "assistant", usage: { input: 100, cacheRead: 0, cacheWrite: 0 } } }),
+	];
+
+	// 300 of 600 billed input tokens came from the cache.
+	assert.deepEqual(collectSnapshot(fakeContext(branch), Date.now()).cache, { requests: 2, hitRatio: 0.5 });
+});
+
+test("sends the cache hit share only once it means something", () => {
+	// ccline shows the share from the second request on and falls back to a
+	// misleading "cold" label when hit_ratio is missing, so nothing is sent yet.
+	assert.equal("prompt_cache" in buildCclineInput(snapshot({ cache: { requests: 1, hitRatio: 0 } })), false);
+	assert.deepEqual(buildCclineInput(snapshot({ cache: { requests: 41, hitRatio: 0.94123 } })).prompt_cache, {
+		requests: 41,
+		hit_ratio: 0.9412,
+	});
 });
 
 test("collectSnapshot carries the provider from ctx.model", () => {

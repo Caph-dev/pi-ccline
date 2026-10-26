@@ -6,6 +6,7 @@ import { loadConfig, saveConfig, type PiCclineConfig } from "./config.ts";
 import { buildCclineInput, collectSnapshot } from "./input.ts";
 import { RefreshScheduler, RefreshTicker } from "./refresh.ts";
 import { extensionStatusLine, loadingNotice, missingBinaryNotice, normalizeFrame, noticeFrame, withStaleMarker } from "./render.ts";
+import { removeTurnBridge, TurnMeter, writeTurnBridge } from "./turn.ts";
 
 /** Structural subsets so the footer does not depend on pi-tui internals. */
 type TuiLike = { requestRender(force?: boolean): void };
@@ -14,6 +15,11 @@ type FooterDataLike = {
 	onBranchChange(callback: () => void): () => void;
 	/** Present on pi >= 1.4; absent on older footers, hence optional. */
 	getExtensionStatuses?(): ReadonlyMap<string, string>;
+};
+
+/** The slice of a pi message event this extension reads. */
+type MessageEventLike = {
+	message?: { role?: string | undefined; model?: string | undefined; usage?: { output?: number | undefined } | undefined } | undefined;
 };
 
 const DEFAULT_WIDTH = 120;
@@ -57,12 +63,16 @@ export class CclineFooter {
 	private footerData: FooterDataLike | null = null;
 	private requestRenderFn: (() => void) | null = null;
 	private branchUnsubscribe: (() => void) | null = null;
+	/** Session whose ccline bridge this footer wrote, removed again on dispose. */
+	private bridgeSessionId: string | null = null;
+	private readonly meter = new TurnMeter();
 	private disposed = false;
 
 	readonly stats = {
 		refreshes: 0,
 		lastRefreshAt: null as number | null,
 		lastDurationMs: null as number | null,
+		lastTps: null as number | null,
 	};
 	resolved: ResolvedBinary = { path: null, source: "missing" };
 
@@ -134,6 +144,56 @@ export class CclineFooter {
 
 	get error(): string | null {
 		return this.lastError;
+	}
+
+	/** The session pi reports, or null when it cannot be read or is unusable. */
+	private sessionId(): string | null {
+		try {
+			const id = this.ctx.sessionManager.getSessionId?.();
+			return typeof id === "string" && id.trim() ? id.trim() : null;
+		} catch {
+			return null;
+		}
+	}
+
+	/** A model request went out: start timing until its answer finishes. */
+	onMessageStart(event: MessageEventLike): void {
+		const message = event.message;
+		if (!message || message.role !== "assistant") return;
+		// Stream start, not send time: pi begins the stream once the provider has
+		// answered, so this ttft stops short of the connect wait by design.
+		this.meter.start(message.model, performance.now());
+	}
+
+	/**
+	 * A content block of that answer arrived (`text_start` / `*_delta` /
+	 * `toolcall_*`; pi emits no metadata through this event), so the clock for
+	 * the streaming rate starts at the first sign of content.
+	 */
+	onMessageUpdate(event: MessageEventLike): void {
+		if (event.message?.role !== "assistant") return;
+		this.meter.firstDelta(performance.now());
+	}
+
+	/**
+	 * The answer finished: hand ccline its timing through the bridge file it
+	 * reads for `timing.tps`. No speed, no file.
+	 */
+	onMessageEnd(event: MessageEventLike): void {
+		const message = event.message;
+		if (!message || message.role !== "assistant") return;
+		// Measurement uses the monotonic clock; only the bridge's freshness
+		// stamp is wall-clock, and the two are never mixed.
+		const timing = this.meter.finish(message.usage?.output, performance.now());
+		if (!timing) return;
+		const sessionId = this.sessionId();
+		if (!sessionId) return;
+		if (!writeTurnBridge({ sessionId, timing, nowMs: Date.now() })) return;
+		if (this.bridgeSessionId && this.bridgeSessionId !== sessionId) removeTurnBridge(this.bridgeSessionId);
+		this.bridgeSessionId = sessionId;
+		this.stats.lastTps = timing.tps;
+		// The new speed only shows up in the next frame; let the throttle coalesce it.
+		this.requestRefresh();
 	}
 
 	get hasFrame(): boolean {
@@ -253,6 +313,8 @@ export class CclineFooter {
 		this.branchUnsubscribe = null;
 		this.footerData = null;
 		this.requestRenderFn = null;
+		if (this.bridgeSessionId) removeTurnBridge(this.bridgeSessionId);
+		this.bridgeSessionId = null;
 	}
 }
 
@@ -307,6 +369,11 @@ export default function piCcline(pi: ExtensionAPI, deps: PiCclineDeps = {}) {
 	pi.on("model_select", () => requestRefresh());
 	pi.on("thinking_level_select", () => requestRefresh());
 	pi.on("session_info_changed", () => requestRefresh());
+	// Per-request timing is not in the statusline payload, so it is measured
+	// from the stream and written to ccline's bridge file when an answer ends.
+	pi.on("message_start", (event) => footer?.onMessageStart(event as MessageEventLike));
+	pi.on("message_update", (event) => footer?.onMessageUpdate(event as MessageEventLike));
+	pi.on("message_end", (event) => footer?.onMessageEnd(event as MessageEventLike));
 	pi.on("session_shutdown", () => teardown());
 
 	pi.registerCommand("pi-ccline", {
@@ -364,6 +431,7 @@ export default function piCcline(pi: ExtensionAPI, deps: PiCclineDeps = {}) {
 				const { refreshes, lastRefreshAt, lastDurationMs } = footer.stats;
 				lines.push(`refreshes: ${refreshes} · last: ${lastRefreshAt === null ? "never" : `${Math.round((Date.now() - lastRefreshAt) / 1000)}s ago`}`);
 				lines.push(`duration: ${lastDurationMs === null ? "n/a" : `${lastDurationMs}ms`} · frame: ${footer.hasFrame ? "cached" : "none"}`);
+				lines.push(`last answer: ${footer.stats.lastTps === null ? "not measured yet" : `${footer.stats.lastTps.toFixed(1)} tok/s`}`);
 				lines.push(`state: ${footer.error ? `stale — ${footer.error}` : "ok"}`);
 			} else {
 				lines.push("state: footer not installed");

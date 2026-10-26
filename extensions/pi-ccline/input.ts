@@ -28,6 +28,14 @@ export interface PiSnapshotTotals {
 	durationMs?: number | undefined;
 }
 
+/** Prompt-cache reuse summed over the visible branch. */
+export interface PiSnapshotCache {
+	/** Assistant messages seen, each one a model request. */
+	requests: number;
+	/** cacheRead / (input + cacheRead + cacheWrite); the share read from cache. */
+	hitRatio: number;
+}
+
 export interface PiSnapshotSession {
 	id?: string | undefined;
 	name?: string | undefined;
@@ -39,6 +47,7 @@ export interface PiSnapshot {
 	thinkingLevel?: string | undefined;
 	contextUsage?: PiSnapshotContextUsage | undefined;
 	totals?: PiSnapshotTotals | undefined;
+	cache?: PiSnapshotCache | undefined;
 	session?: PiSnapshotSession | undefined;
 }
 
@@ -95,6 +104,11 @@ function round1(value: number): number {
 	return Math.round(value * 10) / 10;
 }
 
+/** A ratio ccline renders as a whole percent, so four decimals are plenty. */
+function round4(value: number): number {
+	return Math.round(value * 10_000) / 10_000;
+}
+
 function trimmed(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const text = value.trim();
@@ -120,6 +134,10 @@ export function collectSnapshot(ctx: SnapshotContextLike, nowMs: number): PiSnap
 	let costUsd = 0;
 	let sawAssistantUsage = false;
 	let firstTimestamp: number | undefined;
+	let requests = 0;
+	let inputTokens = 0;
+	let cacheReadTokens = 0;
+	let cacheWriteTokens = 0;
 
 	for (const entry of branch) {
 		const timestamp = entry.timestamp ? Date.parse(entry.timestamp) : Number.NaN;
@@ -131,6 +149,10 @@ export function collectSnapshot(ctx: SnapshotContextLike, nowMs: number): PiSnap
 		if (!entryUsage) continue;
 		sawAssistantUsage = true;
 		costUsd += num(entryUsage.cost?.total);
+		requests += 1;
+		inputTokens += num(entryUsage.input);
+		cacheReadTokens += num(entryUsage.cacheRead);
+		cacheWriteTokens += num(entryUsage.cacheWrite);
 	}
 
 	const totals: PiSnapshotTotals | undefined = sawAssistantUsage
@@ -142,6 +164,9 @@ export function collectSnapshot(ctx: SnapshotContextLike, nowMs: number): PiSnap
 
 	const sessionId = attempt(() => ctx.sessionManager.getSessionId?.());
 	const sessionName = attempt(() => ctx.sessionManager.getSessionName?.());
+	// The denominator is every input token the branch was billed for; without
+	// one there is no ratio to report (a session that never sent a prompt yet).
+	const seenInput = inputTokens + cacheReadTokens + cacheWriteTokens;
 
 	return {
 		cwd: ctx.cwd,
@@ -155,6 +180,7 @@ export function collectSnapshot(ctx: SnapshotContextLike, nowMs: number): PiSnap
 				}
 			: undefined,
 		totals,
+		cache: requests > 0 && seenInput > 0 ? { requests, hitRatio: cacheReadTokens / seenInput } : undefined,
 		session: { id: trimmed(sessionId), name: trimmed(sessionName) },
 	};
 }
@@ -235,6 +261,14 @@ export function buildCclineInput(snapshot: PiSnapshot, options: BuildCclineInput
 	if (sessionId) input.session_id = sessionId;
 	const sessionName = trimmed(snapshot.session?.name);
 	if (sessionName) input.session_name = sessionName;
+
+	// ccline only renders the hit share from the second request on, and falls
+	// back to its "cold" wording whenever `hit_ratio` is missing. So the block
+	// is sent only once it can say something pi actually measured.
+	const cache = snapshot.cache;
+	if (cache && cache.requests >= 2) {
+		input.prompt_cache = { requests: cache.requests, hit_ratio: round4(cache.hitRatio) };
+	}
 
 	// rate_limits has no pi data source; omitting it removes the quota segment.
 	return input;

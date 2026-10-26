@@ -106,6 +106,8 @@ package.json
 
 - 2026-10-25 **耗时不是秒级更新**。根因：刷新完全事件驱动（`turn_start` / `turn_end` 等），而 `cost.total_duration_ms` 是 spawn 那一刻算的 `now − 分支最早 entry`，所以显示节奏等于 turn 边界节奏（约 5s、不固定）。修法：新增 `RefreshTicker`（`refresh.ts`）与配置 `liveRefreshMs`（默认 1000，0 关闭，非 0 下限 250），`agent_start`/`turn_start` 起表、`agent_end`/`agent_settled` 停表，只沿用同一个 `RefreshScheduler`（单飞 + 节流 + latest-wins）。空闲不 spawn。验证：`node --test` 65 项全绿；用真实 ccline 2.0.1 跑 250ms ticker，3 秒内 `耗时` 依次出现 5s → 6s → 7s → 8s。
 
+- 2026-10-26 **新增缓存命中率与 tok/s**（0.2.0）。先在真实二进制上反向确认了数据来源：`cache` 指标从 stdin 的 `prompt_cache` 读，`hit_ratio` 是 0–1 小数且 `requests > 1` 才显示（缺失时回退到 `cold` 文案）；`timing.tps` / `timing.ttft` **只**读 `$CCLINE_HOME|~/.claude/ccline` 下 `bridge/<session>.json`（伴生 mod 写的 v1 文件，超过 6h 视为过期），指标 id 写 `timing` 不报错但静默不渲染。据此：`input.ts` 按分支累计 `cacheRead / (input + cacheRead + cacheWrite)` 并在第二次请求起发 `prompt_cache`；新增 `turn.ts` 用 `message_start` → 首个 `message_update` → `message_end` 实测 ttft / tps（单调时钟），原子写 bridge，`session_shutdown` 时删除。验证：`node --test` 88 项全绿；用真实 ccline 2.0.1 + 真实 `writeTurnBridge` 输出，宽度 120/80/40 分别得到 `99% hit` 与 `75 tok/s`，无越宽；无 `prompt_cache` 与无 bridge 时两段干净消失，命中 0 显示 `0% hit`。
+
 ## 10. 参考
 
 - pi 安装目录：`/Users/caph/.local/share/fnm/node-versions/v24.15.0/installation/lib/node_modules/@earendil-works/pi-coding-agent`
