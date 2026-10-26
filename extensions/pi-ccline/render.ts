@@ -47,9 +47,9 @@ export interface StatusLineOptions {
 
 /**
  * A status arrives from another extension as text, and that extension may or
- * may not have colored it. A badge adds an icon and a color — but only to a
- * status that did not style itself, so an extension that already uses
- * `theme.fg` keeps its own palette instead of ending up half-colored.
+ * may not have colored it. A badge adds an icon and a color. When the text
+ * styles itself the badge colors only its own icon, so the sending extension
+ * keeps the palette it chose instead of ending up recolored.
  */
 function withBadge(key: string, text: string, options: StatusLineOptions): string {
 	const badges = options.badges;
@@ -57,16 +57,21 @@ function withBadge(key: string, text: string, options: StatusLineOptions): strin
 	// object's inherited members.
 	const badge = badges && Object.hasOwn(badges, key) ? badges[key] : undefined;
 	if (!badge) return text;
-	if (text.includes("\u001b[")) return text;
-	const label = badge.icon ? `${badge.icon} ${text}` : text;
 	const colorize = options.colorize;
-	if (!badge.color || !colorize) return label;
-	try {
-		return colorize(badge.color, label);
-	} catch {
-		// An unknown theme token must not cost the row its text.
-		return label;
+	const paint = (target: string): string => {
+		if (!badge.color || !colorize) return target;
+		try {
+			return colorize(badge.color, target);
+		} catch {
+			// An unknown theme token must not cost the row its text.
+			return target;
+		}
+	};
+	if (text.includes("\u001b[")) {
+		if (!badge.icon) return text;
+		return `${paint(badge.icon)} ${text}`;
 	}
+	return paint(badge.icon ? `${badge.icon} ${text}` : text);
 }
 
 /**

@@ -102,13 +102,22 @@ test("a badge adds its icon and color to the matching status key only", () => {
 	assert.equal(line, "connected [accent]R poteto-mode");
 });
 
-test("a status that colors itself keeps its own styling", () => {
+test("a status that colors itself keeps its colors and gets a colored icon", () => {
 	const statuses = new Map([["pi-herdr-pstack", `${RED}poteto-mode${RESET}`]]);
 	const line = extensionStatusLine(statuses, 80, "…", {
 		badges: { "pi-herdr-pstack": { icon: "R", color: "accent" } },
 		colorize: (color, text) => `[${color}]${text}`,
 	});
-	assert.equal(line, `${RED}poteto-mode${RESET}`);
+	assert.equal(line, `[accent]R ${RED}poteto-mode${RESET}`);
+});
+
+test("a self-colored status is not touched at all when its badge has no icon", () => {
+	const styled = `${RED}poteto-mode${RESET}`;
+	const line = extensionStatusLine(new Map([["pi-herdr-pstack", styled]]), 80, "…", {
+		badges: { "pi-herdr-pstack": { icon: "", color: "accent" } },
+		colorize: (color, text) => `[${color}]${text}`,
+	});
+	assert.equal(line, styled);
 });
 
 test("an unknown theme token falls back to the plain badge label", () => {

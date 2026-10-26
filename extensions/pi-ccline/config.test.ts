@@ -63,11 +63,17 @@ test("ships a built-in poteto-mode badge and lets the config override it field b
 
 	// Clearing only the icon keeps the built-in color.
 	const noIcon = normalizeConfig({ statusBadges: { "pi-herdr-pstack": { icon: "" } } });
-	assert.deepEqual(resolveStatusBadges(noIcon.statusBadges), { "pi-herdr-pstack": { icon: "", color: "accent" } });
+	assert.deepEqual(resolveStatusBadges(noIcon.statusBadges), {
+		...DEFAULT_STATUS_BADGES,
+		"pi-herdr-pstack": { icon: "", color: "accent" },
+	});
 
 	// A color-only override reuses the built-in icon.
 	const recolored = normalizeConfig({ statusBadges: { "pi-herdr-pstack": { color: "warning" } } });
-	assert.deepEqual(resolveStatusBadges(recolored.statusBadges), { "pi-herdr-pstack": { icon: DEFAULT_STATUS_BADGES["pi-herdr-pstack"]?.icon, color: "warning" } });
+	assert.deepEqual(resolveStatusBadges(recolored.statusBadges), {
+		...DEFAULT_STATUS_BADGES,
+		"pi-herdr-pstack": { icon: DEFAULT_STATUS_BADGES["pi-herdr-pstack"]?.icon, color: "warning" },
+	});
 });
 
 test("badges can be added for other status keys, and unusable entries are dropped", () => {

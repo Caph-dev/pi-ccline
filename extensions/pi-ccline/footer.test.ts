@@ -212,6 +212,17 @@ test("the built-in poteto-mode badge decorates the pi-herdr-pstack status", () =
 	harness.footer.dispose();
 });
 
+test("pi-telegram's colored status keeps its colors and gains the icon", () => {
+	// lib/status.ts renders `accent(label) muted|warning|success(state)`, so the
+	// badge may only prepend its own icon.
+	const telegram = "\u001b[36mtelegram\u001b[39m \u001b[32mconnected\u001b[39m";
+	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'F\\n'") }, undefined, new Map([["telegram", telegram]]));
+	const row = harness.render(120)[1] ?? "";
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `${DEFAULT_STATUS_BADGES.telegram?.icon} telegram connected`);
+	assert.ok(row.includes(telegram), "the plugin's own styling survives");
+	harness.footer.dispose();
+});
+
 test("a configured badge override reaches the rendered row", () => {
 	const statuses = new Map([["pi-herdr-pstack", "poteto-mode"]]);
 	const harness = attach(

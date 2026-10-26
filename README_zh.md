@@ -91,7 +91,7 @@ pi install .
 | `liveRefreshMs` | `1000` | agent 运行期间的定时刷新间隔（让 `耗时` 逐秒走）；`0` 关闭定时器，只保留事件刷新。非 0 时低于 250 会被抬到 250 |
 | `showProvider` | `true` | 是否在模型段追加 provider，如 `Sonnet 4.5 (anthropic)`；`false` 只显示模型名。终端窄到模型段被 ccline 截断时 provider 可能不可见 |
 | `env` | `{}` | 追加给 ccline 的环境变量；同名变量覆盖 pi 继承的值（`COLUMNS` 除外，它由扩展按当前宽度写入） |
-| `statusBadges` | `{}` | 给其他扩展 `ctx.ui.setStatus` 那一行加图标和颜色，形状 `{"<status key>": {"icon": "<字形>", "color": "<主题 token>"}}`。内置一条：`pi-herdr-pstack`（它的 `poteto-mode` 状态）→ Nerd Font 火箭 `U+F135` + `accent`。字段按项合并到内置条目上，所以 `{"pi-herdr-pstack": {"icon": ""}}` 只去掉图标、保留颜色；两个字段都写 `""` 即去掉徽标。status key 与 `setStatus` 的 key 逐字匹配；文本本身已带 ANSI 颜色的状态原样保留；主题里不存在的 token 回退成不上色 |
+| `statusBadges` | `{}` | 给其他扩展 `ctx.ui.setStatus` 那一行加图标和颜色，形状 `{"<status key>": {"icon": "<字形>", "color": "<主题 token>"}}`。内置两条：`pi-herdr-pstack`（它的 `poteto-mode` 状态）→ 火箭 `U+F135` + `accent`，`telegram` → `U+F2C6` + `accent`。字段按项合并到内置条目上，所以 `{"pi-herdr-pstack": {"icon": ""}}` 只去掉图标、保留颜色；两个字段都写 `""` 即去掉徽标。status key 与 `setStatus` 的 key 逐字匹配。图标一律加；颜色在文本没上色时刷整段，在发它的扩展已经自己上色时只刷图标（pi-telegram 就是自己上色的）。主题里不存在的 token 回退成不上色 |
 
 二进制解析顺序：`config.binary` → `~/.claude/ccline/ccline` → `PATH` 中的 `ccline`。
 
@@ -104,7 +104,7 @@ pi install .
 - 找不到二进制：footer 显示一行安装提示。
 - 行宽一律用 `visibleWidth` / `truncateToWidth` 计算，不用 `.length`。
 - **其他扩展的 `ctx.ui.setStatus` 照样可见**：`render(width)` 读 `footerData.getExtensionStatuses()`，按 key 排序、用空格拼成一行、超宽时用 dim `…` 截断，追加在 ccline 帧下方——行为对齐 pi 内置 footer。读的是实时 map，`setStatus` 自己会触发重绘，所以状态变化不受 1Hz 节流限制。
-- **status 可以带徽标**：`setStatus` 交过来的是文本，有没有上色取决于发它的扩展（pi 自带 footer 不再加任何样式）。所以本扩展只装饰「没有自己上色」的状态：按 status key 加 Nerd Font 图标和主题色（内置条目在 `config.ts` 的 `DEFAULT_STATUS_BADGES`，目前是 pi-herdr-pstack 的 `poteto-mode`）。图标计入整行的可见宽度再截断；文本自带 ANSI 的状态跳过装饰，避免两套配色混在一起；颜色每帧走一次 `theme.fg()`，token 不在主题里就退成纯文本。
+- **status 可以带徽标**：`setStatus` 交过来的是文本，有没有上色取决于发它的扩展（pi 自带 footer 不再加任何样式）。所以本扩展按 status key 加 Nerd Font 图标和主题色（内置条目在 `config.ts` 的 `DEFAULT_STATUS_BADGES`，目前是 pi-herdr-pstack 的 `poteto-mode` 和 pi-telegram）。图标计入整行的可见宽度再截断；文本自带 ANSI 时只给图标上色，发它的扩展保留自己选的配色；颜色每帧走一次 `theme.fg()`，token 不在主题里就退成纯文本。
 - 因为 footer 槽位全局只有一个，本扩展装上后其他扩展的自定义 footer（例如 pi-cursor-provider 的 fast 徽标）会被顶掉；它们的 status 行仍会显示。反过来它们抢占时 ccline 帧会消失，需要 `/pi-ccline on` 取回。
 - **provider 只能拼进模型段。** ccline 2.0.1 的输入 schema 没有 provider 字段，`model` 段只渲染 `display_name`，所以 provider 以 `名称 (provider)` 的形式追加在模型名后；名字里已经带同样的后缀时不重复追加。`showProvider: false` 可关掉。**窄宽度下 provider 可能看不到**：ccline 按 `COLUMNS` 自己折行/截断，实测宽度 40 时模型段只剩 `GPT-5.6`，这是上游布局行为，本扩展只保证把 provider 写进 `display_name`。
 - 输入 JSON **省略 `version` 字段**：ccline 2.0.1 会把它当 Claude Code 版本校验，传 pi 的版本会被直接拒绝。
