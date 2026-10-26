@@ -20,6 +20,7 @@ pi 会话状态 → buildCclineInput() → JSON → ccline（spawn，COLUMNS=当
 | 上下文百分比 / token 数 | `ctx.getContextUsage()` → 当前上下文（聚合估计值）；**不发会话累计 token** |
 | 缓存命中率 | assistant 消息的 `usage.cacheRead` 除以 `input + cacheRead + cacheWrite`，在分支上累加 → `prompt_cache.hit_ratio`；从第二次请求起才发送 |
 | 输出速度（`tok/s`） | 由 `message_start` → 首个 `message_update` → `message_end` 实测，写入 ccline 的 `bridge/<session>.json` 供 `timing.tps` 读取 |
+| 运行中的工具 | `tool_execution_start` / `tool_execution_end` → 同一个 bridge 文件的 `tools` 数组，供 `activity.tools` 读取 |
 | 成本、会话时长 | assistant 消息 `usage.cost.total` 累加；时长 = 当前时间 − 分支最早 entry |
 | 会话 id / 名称 | `ctx.sessionManager` |
 | git 分支等 ccline 自行探测的信息 | ccline 自己读磁盘 |
@@ -105,7 +106,7 @@ pi install .
 - **provider 只能拼进模型段。** ccline 2.0.1 的输入 schema 没有 provider 字段，`model` 段只渲染 `display_name`，所以 provider 以 `名称 (provider)` 的形式追加在模型名后；名字里已经带同样的后缀时不重复追加。`showProvider: false` 可关掉。**窄宽度下 provider 可能看不到**：ccline 按 `COLUMNS` 自己折行/截断，实测宽度 40 时模型段只剩 `GPT-5.6`，这是上游布局行为，本扩展只保证把 provider 写进 `display_name`。
 - 输入 JSON **省略 `version` 字段**：ccline 2.0.1 会把它当 Claude Code 版本校验，传 pi 的版本会被直接拒绝。
 - **缓存命中率：** `prompt_cache` 从第二条 assistant 消息起才发。这是 ccline 自己的显示门槛（`requests > 1`），它的理由是一次请求通常只是在写缓存——但首个请求确实可能命中之前会话已缓存的 prefix，所以这是显示行为，不是对「第一次请求」的事实断言。若在门槛前就发 `hit_ratio`，ccline 还会回退到 `cold` 文案，而那是 pi 无法断言的。`current_usage` 仍然只填 `input_tokens`：pi 的上下文估计值本就包含缓存 token，而缺少 `total_input_tokens` 时 ccline 会把 `current_usage` 各项相加，把 cache 数填进去会让它们被重复计入上下文进度条。
-- **输出速度走 ccline 的 bridge，不走 stdin。** ccline 的 `timing.tps` / `timing.ttft` 读的是其数据目录（`$CCLINE_HOME` 或 `~/.claude/ccline`）下的 `bridge/<session>.json`，也就是它家在 Claude Code 里的伴生 mod 写的文件。statusline 载荷里没有单次请求耗时，所以本扩展用 `message_start` / `message_update` / `message_end` 自己计时，并按同样的 `v: 1` 结构原子写入，每个答完的请求写一次。ttft = 流开始 → 首个内容块；pi 是在 provider 开始响应后才发 `message_start`，所以这个数不含建立连接的等待。tps = 该回答的 output token 除以「首个内容块 → `message_end`」的时长，所以等首字的耗时不算进生成速度。计时用单调时钟（`performance.now()`），只有 bridge 的新鲜度标记用墙钟。`session_shutdown` 时删除该文件；ccline 也会忽略超过 6 小时的 bridge。
+- **输出速度与运行中的工具走 ccline 的 bridge，不走 stdin。** ccline 的 `timing.tps` / `timing.ttft` 与 `activity.tools` 读的是其数据目录（`$CCLINE_HOME` 或 `~/.claude/ccline`）下的 `bridge/<session>.json`，也就是它家在 Claude Code 里的伴生 mod 写的文件。statusline 载荷里既没有单次请求耗时，也没有运行中工具列表，所以本扩展自己实测、自己跟踪，并按同样的 `v: 1` 结构原子写入。因为两者共用一个文件，每次写入都带全量：最后答完那次请求的计时 + 当前运行中的工具，所以工具起止不会把 `tok/s` 清掉，新回答也不会把已结束的工具留在那里。ttft = 流开始 → 首个内容块；pi 是在 provider 开始响应后才发 `message_start`，所以这个数不含建立连接的等待。tps = 该回答的 output token 除以「首个内容块 → `message_end`」的时长，所以等首字的耗时不算进生成速度。计时用单调时钟（`performance.now()`），只有 bridge 的新鲜度标记用墙钟。`tools` 会跳过带 `parentToolCallId` 的调用（codemode 脚本、工具内部再调工具），所以这段只列用户真正发起的调用。`session_shutdown` 时删除该文件；ccline 也会忽略超过 6 小时的 bridge。
 - 没有运行时依赖，只用 `node:child_process` / `node:fs` / `node:os` / `node:path` 和 pi 提供的 peer 包 `@earendil-works/pi-tui`。
 - 非 TUI 模式（`-p`、json、rpc）不安装 footer、不 spawn。
 - 扩展自己的配置写在 `~/.pi/agent/pi-ccline/config.json`，不碰 pi 的 `settings.json`。
@@ -136,6 +137,7 @@ node --experimental-strip-types scripts/render-once.ts --home "$(mktemp -d)" --b
 - **ccline 会写 `~/.claude/ccline/state/`**（会话状态、模型缓存、update.lock）。这是上游行为，扩展无法关闭。另外本扩展会写 `~/.claude/ccline/bridge/<session>.json` 供 `timing.tps` 段使用，会话关闭时删掉。
 - **缓存段只显示命中率。** 冷热状态、TTL 倒计时、miss 次数与原因需要 pi 没有的数据（provider 的缓存过期时间、重建原因），这些字段一律不发；配置里用 `format = "{hit}% hit"` 就只剩这一个数字，而第二次请求之前整段直接消失，而不是谎称 `cold`。
 - **`tok/s` 描述的是最后一次答完的请求，不是滚动平均。** 它按请求实测，只在回答结束时更新（非流式 provider、或只有几个 token 的回答不会产生样本，上一轮的数值会继续显示到下一次更新）。`duration` 和 `tok/s` 没有关系：前者是会话墙钟时长，后者是流式速度。
+- **工具段只显示「此刻在跑」的调用。** ccline 只点名最老的两个、其余的折成 `+N`，elapsed 取最老那个的耗时；没有历史、没有单工具耗时、没有输出。带 `parentToolCallId` 的调用（codemode 脚本、工具内部再调工具）不列；子 agent 内部的调用只有 pi 把它交给主扩展时才会出现，目前不会。
 - **依赖外部二进制。** 没有 `ccline` 时 footer 只有一行安装提示；升级 `ccline` 后无需重启扩展，但二进制路径会被缓存到下一次解析（`/pi-ccline on` 或新会话会重算）。
 - **上游兼容性只覆盖已测版本。** ccline 2.0.1 的 `input.rs` 每个字段都是 `Option` + lenient 反序列化，同一大版本内字段换形状一般只会让对应段消失；但大版本之间已经发生过必填字段变化（1.1.x → 2.0.x），升级 ccline 后请用 `scripts/render-once.ts` 复跑一次。
 - **需要 Nerd Font v3+。** 图标字体缺失时会显示成方块；Windows 未测试。
@@ -156,7 +158,7 @@ extensions/pi-ccline/
   binary.ts   路径解析/缓存、带超时与中止的 spawn、--version 探测
   render.ts   输出归一化：分行、按可见宽度截断、stale 标记
   refresh.ts  单飞 + 节流 + latest-wins 调度器，以及驱动 `耗时` 的定时器
-  turn.ts     从流事件实测单次请求耗时，并写 ccline 的 bridge 文件供 `timing.tps`
+  turn.ts     从流事件实测单次请求耗时、跟踪运行中的工具，并写 ccline 的 bridge 文件
   config.ts   配置读写
   *.test.ts   node --test
 scripts/render-once.ts   用 fixture 跑一次真实 ccline

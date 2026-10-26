@@ -421,6 +421,54 @@ test("writes ccline's timing bridge from the streamed answer", async () => {
 	}
 });
 
+test("publishes running tools in the same bridge as the timing", async () => {
+	const cclineHome = tempDir("pi-ccline-bridge-tools-");
+	const previousHome = process.env.CCLINE_HOME;
+	process.env.CCLINE_HOME = cclineHome;
+	try {
+		const binary = fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'");
+		const { pi, dispatch } = fakePi();
+		piCcline(pi as never, { loadConfig: () => ({ ...DEFAULT_CONFIG, binary }) });
+		const { ctx } = fakeSession({ idle: true, binary });
+		await dispatch("session_start", ctx);
+
+		// One finished answer, so the bridge already carries a turn.
+		const assistant = { role: "assistant", model: "m", usage: { output: 400 } };
+		await dispatch("message_start", ctx, { message: assistant });
+		await sleep(120);
+		await dispatch("message_update", ctx, { message: assistant });
+		await sleep(220);
+		await dispatch("message_end", ctx, { message: assistant });
+
+		const read = () => JSON.parse(readFileSync(join(cclineHome, "bridge", "sess-1.json"), "utf8"));
+		await dispatch("tool_execution_start", ctx, { toolCallId: "t1", toolName: "Bash" });
+		const running = read();
+		assert.deepEqual(running.tools.map((tool: { name: string }) => tool.name), ["Bash"]);
+		assert.ok(running.tools[0].since > 0);
+		assert.ok(running.turn.tps > 0, "a tools update must not blank the timing segment");
+
+		// A nested call from another tool is not a tool the user issued.
+		await dispatch("tool_execution_start", ctx, { toolCallId: "t2", toolName: "Read", parentToolCallId: "t1" });
+		assert.equal(read().tools.length, 1);
+
+		await dispatch("tool_execution_end", ctx, { toolCallId: "t1" });
+		const finished = read();
+		assert.equal("tools" in finished, false, "a finished tool leaves no row behind");
+		assert.ok(finished.turn.tps > 0);
+
+		// An aborted run may never send the end event; the run boundary clears it.
+		await dispatch("tool_execution_start", ctx, { toolCallId: "t3", toolName: "Grep" });
+		assert.equal(read().tools.length, 1);
+		await dispatch("agent_end", ctx);
+		assert.equal("tools" in read(), false, "no tool survives the run that owned it");
+
+		await dispatch("session_shutdown", ctx);
+	} finally {
+		if (previousHome === undefined) delete process.env.CCLINE_HOME;
+		else process.env.CCLINE_HOME = previousHome;
+	}
+});
+
 test("ignores message events that are not the assistant's answer", async () => {
 	const cclineHome = tempDir("pi-ccline-bridge-role-");
 	const previousHome = process.env.CCLINE_HOME;

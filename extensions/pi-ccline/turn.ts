@@ -43,34 +43,57 @@ export function bridgeFileName(sessionId: string): string | null {
 	return /^[A-Za-z0-9._-]+$/.test(sessionId) ? `${sessionId}.json` : null;
 }
 
-export interface TurnBridgeOptions {
+/** A tool call that is still running, as ccline's `activity.tools` reads it. */
+export interface BridgeTool {
+	name: string;
+	/** Unix epoch milliseconds it started; ccline derives the elapsed time. */
+	since: number;
+}
+
+export interface BridgeOptions {
 	sessionId: string;
-	timing: TurnTiming;
+	/** The last finished answer, kept while tools come and go (same file). */
+	timing?: TurnTiming | undefined;
+	/** Tool calls running right now, oldest first is not required: ccline sorts. */
+	tools?: readonly BridgeTool[] | undefined;
 	/** Unix epoch milliseconds of the write; ccline drops bridges older than 6h. */
 	nowMs: number;
 	dir?: string;
 }
 
-/** Write the bridge for one session. Returns false instead of throwing. */
-export function writeTurnBridge(options: TurnBridgeOptions): boolean {
+/**
+ * Write the bridge for one session. `turn` and `tools` share one file, so every
+ * writer passes both: dropping `turn` would make `timing.tps` disappear.
+ * Returns false instead of throwing.
+ */
+export function writeBridge(options: BridgeOptions): boolean {
 	const name = bridgeFileName(options.sessionId);
 	if (!name) return false;
+	const tools = options.tools ?? [];
+	if (!options.timing && tools.length === 0) return false;
 	const dir = options.dir ?? bridgeDir();
 	const path = join(dir, name);
-	const { model, ttftMs, tps, durationMs, outputTokens } = options.timing;
-	const turn: Record<string, unknown> = {
-		tps,
-		duration_ms: Math.round(durationMs),
-		output_tokens: Math.round(outputTokens),
-	};
-	if (model) turn.model = model;
-	if (ttftMs !== undefined) turn.ttft_ms = Math.round(ttftMs);
-	const payload = {
+	const payload: Record<string, unknown> = {
 		v: 1,
 		session: options.sessionId,
 		updated_at: Math.round(options.nowMs),
-		turn,
 	};
+
+	const timing = options.timing;
+	if (timing) {
+		const { model, ttftMs, tps, durationMs, outputTokens } = timing;
+		const turn: Record<string, unknown> = {
+			tps,
+			duration_ms: Math.round(durationMs),
+			output_tokens: Math.round(outputTokens),
+		};
+		if (model) turn.model = model;
+		if (ttftMs !== undefined) turn.ttft_ms = Math.round(ttftMs);
+		payload.turn = turn;
+	}
+	if (tools.length > 0) {
+		payload.tools = tools.map((tool) => ({ name: tool.name, since: Math.round(tool.since) }));
+	}
 
 	try {
 		mkdirSync(dir, { recursive: true });

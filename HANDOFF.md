@@ -108,6 +108,8 @@ package.json
 
 - 2026-10-26 **新增缓存命中率与 tok/s**（0.2.0）。先在真实二进制上反向确认了数据来源：`cache` 指标从 stdin 的 `prompt_cache` 读，`hit_ratio` 是 0–1 小数且 `requests > 1` 才显示（缺失时回退到 `cold` 文案）；`timing.tps` / `timing.ttft` **只**读 `$CCLINE_HOME|~/.claude/ccline` 下 `bridge/<session>.json`（伴生 mod 写的 v1 文件，超过 6h 视为过期），指标 id 写 `timing` 不报错但静默不渲染。据此：`input.ts` 按分支累计 `cacheRead / (input + cacheRead + cacheWrite)` 并在第二次请求起发 `prompt_cache`；新增 `turn.ts` 用 `message_start` → 首个 `message_update` → `message_end` 实测 ttft / tps（单调时钟），原子写 bridge，`session_shutdown` 时删除。验证：`node --test` 88 项全绿；用真实 ccline 2.0.1 + 真实 `writeTurnBridge` 输出，宽度 120/80/40 分别得到 `99% hit` 与 `75 tok/s`，无越宽；无 `prompt_cache` 与无 bridge 时两段干净消失，命中 0 显示 `0% hit`。
 
+- 2026-10-26 **新增运行中工具段（activity.tools）**。同一份 bridge 文件里再加 `tools:[{name, since(ms)}]`：`tool_execution_start`/`tool_execution_end` 维护 `Map<toolCallId, {name, since}>`，跳过带 `parentToolCallId` 的嵌套调用（codemode、工具内调工具），并把写入收敛成 `flushBridge()`——每次同时带「上次答完的 turn」与「当前 runningTools」，否则会互相清空（ccline 一个会话只读一个 bridge 文件）。验证：`node --test` 91 项全绿；真实 ccline 2.0.1 在 width 120/80/40 均得到 `Bash · Read · 14s`，与 `99% hit`、`75 tok/s` 共存无越宽；空 tools 时整段消失，嵌套调用不进列表。
+
 ## 10. 参考
 
 - pi 安装目录：`/Users/caph/.local/share/fnm/node-versions/v24.15.0/installation/lib/node_modules/@earendil-works/pi-coding-agent`

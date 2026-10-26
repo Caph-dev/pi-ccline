@@ -6,7 +6,7 @@ import { loadConfig, saveConfig, type PiCclineConfig } from "./config.ts";
 import { buildCclineInput, collectSnapshot } from "./input.ts";
 import { RefreshScheduler, RefreshTicker } from "./refresh.ts";
 import { extensionStatusLine, loadingNotice, missingBinaryNotice, normalizeFrame, noticeFrame, withStaleMarker } from "./render.ts";
-import { removeTurnBridge, TurnMeter, writeTurnBridge } from "./turn.ts";
+import { removeTurnBridge, TurnMeter, writeBridge, type BridgeTool, type TurnTiming } from "./turn.ts";
 
 /** Structural subsets so the footer does not depend on pi-tui internals. */
 type TuiLike = { requestRender(force?: boolean): void };
@@ -20,6 +20,14 @@ type FooterDataLike = {
 /** The slice of a pi message event this extension reads. */
 type MessageEventLike = {
 	message?: { role?: string | undefined; model?: string | undefined; usage?: { output?: number | undefined } | undefined } | undefined;
+};
+
+/** The slice of a pi tool event this extension reads. */
+type ToolEventLike = {
+	toolCallId?: string | undefined;
+	toolName?: string | undefined;
+	/** Set when another tool (a codemode script, an agent) made the call. */
+	parentToolCallId?: string | undefined;
 };
 
 const DEFAULT_WIDTH = 120;
@@ -65,6 +73,10 @@ export class CclineFooter {
 	private branchUnsubscribe: (() => void) | null = null;
 	/** Session whose ccline bridge this footer wrote, removed again on dispose. */
 	private bridgeSessionId: string | null = null;
+	/** The last finished answer, re-sent with every tools update (one file). */
+	private lastTiming: TurnTiming | null = null;
+	/** Tool calls running now, keyed by pi's tool call id. */
+	private readonly runningTools = new Map<string, BridgeTool>();
 	private readonly meter = new TurnMeter();
 	private disposed = false;
 
@@ -176,6 +188,21 @@ export class CclineFooter {
 	}
 
 	/**
+	 * Rewrite the bridge with everything it has to carry: the last answer's
+	 * timing and the tools running now (ccline reads both from one file, so a
+	 * writer that sent only one of them would blank the other segment).
+	 */
+	private flushBridge(): void {
+		const sessionId = this.sessionId();
+		if (!sessionId) return;
+		const tools = [...this.runningTools.values()];
+		if (!this.lastTiming && tools.length === 0) return;
+		if (!writeBridge({ sessionId, timing: this.lastTiming ?? undefined, tools, nowMs: Date.now() })) return;
+		if (this.bridgeSessionId && this.bridgeSessionId !== sessionId) removeTurnBridge(this.bridgeSessionId);
+		this.bridgeSessionId = sessionId;
+	}
+
+	/**
 	 * The answer finished: hand ccline its timing through the bridge file it
 	 * reads for `timing.tps`. No speed, no file.
 	 */
@@ -186,14 +213,43 @@ export class CclineFooter {
 		// stamp is wall-clock, and the two are never mixed.
 		const timing = this.meter.finish(message.usage?.output, performance.now());
 		if (!timing) return;
-		const sessionId = this.sessionId();
-		if (!sessionId) return;
-		if (!writeTurnBridge({ sessionId, timing, nowMs: Date.now() })) return;
-		if (this.bridgeSessionId && this.bridgeSessionId !== sessionId) removeTurnBridge(this.bridgeSessionId);
-		this.bridgeSessionId = sessionId;
+		this.lastTiming = timing;
 		this.stats.lastTps = timing.tps;
+		this.flushBridge();
 		// The new speed only shows up in the next frame; let the throttle coalesce it.
 		this.requestRefresh();
+	}
+
+	/**
+	 * A tool started: `activity.tools` shows it until `onToolEnd`. Nested calls
+	 * (codemode, tools calling tools) are skipped — a script would otherwise
+	 * flood the segment with names the user never issued.
+	 */
+	onToolStart(event: ToolEventLike): void {
+		const id = event.toolCallId;
+		const name = event.toolName;
+		if (!id || !name || event.parentToolCallId) return;
+		this.runningTools.set(id, { name, since: Date.now() });
+		this.flushBridge();
+		this.requestRefresh();
+	}
+
+	onToolEnd(event: ToolEventLike): void {
+		const id = event.toolCallId;
+		if (!id || !this.runningTools.delete(id)) return;
+		this.flushBridge();
+		this.requestRefresh();
+	}
+
+	/**
+	 * An aborted run can end without a matching `tool_execution_end`, and no
+	 * tool can outlive the run, so drop the rest rather than show a tool that
+	 * keeps counting up forever.
+	 */
+	clearRunningTools(): void {
+		if (this.runningTools.size === 0) return;
+		this.runningTools.clear();
+		this.flushBridge();
 	}
 
 	get hasFrame(): boolean {
@@ -313,6 +369,7 @@ export class CclineFooter {
 		this.branchUnsubscribe = null;
 		this.footerData = null;
 		this.requestRenderFn = null;
+		this.runningTools.clear();
 		if (this.bridgeSessionId) removeTurnBridge(this.bridgeSessionId);
 		this.bridgeSessionId = null;
 	}
@@ -364,8 +421,13 @@ export default function piCcline(pi: ExtensionAPI, deps: PiCclineDeps = {}) {
 	pi.on("agent_end", () => {
 		requestRefresh();
 		footer?.stopLive();
+		// No tool can survive the run, even when an abort skipped its end event.
+		footer?.clearRunningTools();
 	});
-	pi.on("agent_settled", () => footer?.stopLive());
+	pi.on("agent_settled", () => {
+		footer?.stopLive();
+		footer?.clearRunningTools();
+	});
 	pi.on("model_select", () => requestRefresh());
 	pi.on("thinking_level_select", () => requestRefresh());
 	pi.on("session_info_changed", () => requestRefresh());
@@ -374,6 +436,9 @@ export default function piCcline(pi: ExtensionAPI, deps: PiCclineDeps = {}) {
 	pi.on("message_start", (event) => footer?.onMessageStart(event as MessageEventLike));
 	pi.on("message_update", (event) => footer?.onMessageUpdate(event as MessageEventLike));
 	pi.on("message_end", (event) => footer?.onMessageEnd(event as MessageEventLike));
+	// Same bridge: `activity.tools` lists what is still running.
+	pi.on("tool_execution_start", (event) => footer?.onToolStart(event as ToolEventLike));
+	pi.on("tool_execution_end", (event) => footer?.onToolEnd(event as ToolEventLike));
 	pi.on("session_shutdown", () => teardown());
 
 	pi.registerCommand("pi-ccline", {

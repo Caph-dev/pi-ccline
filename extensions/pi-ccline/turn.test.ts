@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 
-import { bridgeDir, bridgeFileName, removeTurnBridge, TurnMeter, writeTurnBridge } from "./turn.ts";
+import { bridgeDir, bridgeFileName, removeTurnBridge, TurnMeter, writeBridge } from "./turn.ts";
 
 const createdDirs: string[] = [];
 afterEach(() => {
@@ -77,9 +77,10 @@ test("a finished sample does not leak into the next request", () => {
 test("writes the bridge shape ccline reads", () => {
 	const dir = tempDir();
 	assert.equal(
-		writeTurnBridge({
+		writeBridge({
 			sessionId: "sess-1",
 			timing: { model: "m", ttftMs: 820, tps: 74.234, durationMs: 41_000, outputTokens: 1_400 },
+			tools: [{ name: "Bash", since: 1_790_808_755_000 }],
 			nowMs: 1_790_808_780_000,
 			dir,
 		}),
@@ -90,12 +91,37 @@ test("writes the bridge shape ccline reads", () => {
 		session: "sess-1",
 		updated_at: 1_790_808_780_000,
 		turn: { model: "m", ttft_ms: 820, tps: 74.234, duration_ms: 41_000, output_tokens: 1_400 },
+		tools: [{ name: "Bash", since: 1_790_808_755_000 }],
 	});
+});
+
+test("keeps the turn when tools come and go, and vice versa", () => {
+	const dir = tempDir();
+	const timing = { tps: 60, durationMs: 2_000, outputTokens: 120 };
+
+	// A tools-only write must not blank timing.tps, and a timing-only write must
+	// not leave a stale tool behind: both live in the same file.
+	writeBridge({ sessionId: "s4", timing, nowMs: 1, dir });
+	writeBridge({ sessionId: "s4", timing, tools: [{ name: "Read", since: 5 }], nowMs: 2, dir });
+	const withTool = JSON.parse(readFileSync(join(dir, "s4.json"), "utf8"));
+	assert.equal(withTool.turn.tps, 60);
+	assert.deepEqual(withTool.tools, [{ name: "Read", since: 5 }]);
+
+	writeBridge({ sessionId: "s4", timing, tools: [], nowMs: 3, dir });
+	const afterTool = JSON.parse(readFileSync(join(dir, "s4.json"), "utf8"));
+	assert.deepEqual(Object.keys(afterTool).sort(), ["session", "turn", "updated_at", "v"]);
+});
+
+test("writes nothing when there is neither timing nor a running tool", () => {
+	const dir = tempDir();
+	assert.equal(writeBridge({ sessionId: "s5", nowMs: 1, dir }), false);
+	assert.equal(writeBridge({ sessionId: "s5", tools: [], nowMs: 1, dir }), false);
+	assert.deepEqual(readdirSync(dir), []);
 });
 
 test("omits timing fields it did not measure", () => {
 	const dir = tempDir();
-	writeTurnBridge({ sessionId: "s2", timing: { tps: 12, durationMs: 1_000, outputTokens: 12 }, nowMs: 1, dir });
+	writeBridge({ sessionId: "s2", timing: { tps: 12, durationMs: 1_000, outputTokens: 12 }, nowMs: 1, dir });
 	const bridge = JSON.parse(readFileSync(join(dir, "s2.json"), "utf8"));
 	assert.deepEqual(Object.keys(bridge.turn).sort(), ["duration_ms", "output_tokens", "tps"]);
 });
@@ -105,7 +131,7 @@ test("refuses session ids that are not plain file names", () => {
 	assert.equal(bridgeFileName("../escape"), null);
 	assert.equal(bridgeFileName("a/b"), null);
 	assert.equal(bridgeFileName(""), null);
-	assert.equal(writeTurnBridge({ sessionId: "../escape", timing: { tps: 1, durationMs: 1, outputTokens: 1 }, nowMs: 1, dir }), false);
+	assert.equal(writeBridge({ sessionId: "../escape", timing: { tps: 1, durationMs: 1, outputTokens: 1 }, nowMs: 1, dir }), false);
 	assert.deepEqual(readdirSync(dir), [], "nothing escaped or landed in the bridge dir");
 });
 
@@ -114,13 +140,13 @@ test("a failed write leaves no temp file behind", () => {
 	// A directory in the target's place makes the rename fail after the temp
 	// file was already written.
 	mkdirSync(join(dir, "blocked.json"));
-	assert.equal(writeTurnBridge({ sessionId: "blocked", timing: { tps: 1, durationMs: 1, outputTokens: 1 }, nowMs: 1, dir }), false);
+	assert.equal(writeBridge({ sessionId: "blocked", timing: { tps: 1, durationMs: 1, outputTokens: 1 }, nowMs: 1, dir }), false);
 	assert.deepEqual(readdirSync(dir), ["blocked.json"]);
 });
 
 test("removes a session bridge and tolerates a missing one", () => {
 	const dir = tempDir();
-	writeTurnBridge({ sessionId: "s3", timing: { tps: 1, durationMs: 1, outputTokens: 1 }, nowMs: 1, dir });
+	writeBridge({ sessionId: "s3", timing: { tps: 1, durationMs: 1, outputTokens: 1 }, nowMs: 1, dir });
 	assert.equal(existsSync(join(dir, "s3.json")), true);
 	removeTurnBridge("s3", dir);
 	assert.equal(existsSync(join(dir, "s3.json")), false);

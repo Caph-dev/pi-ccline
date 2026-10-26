@@ -32,7 +32,7 @@ flowchart LR
 - **两级调度**：事件 → `requestRefresh()` → `RefreshScheduler.request()`（始终 `setTimeout` 延后，最多一个在飞，pending 合并）→ `refresh()`。`RefreshTicker` 在 `agent_start`..`agent_end` 期间按 `liveRefreshMs` 敲同一个 scheduler，让「耗时」逐秒走；空闲不 spawn。
 - **竞态处理**：每次刷新 `++generation`；结果回来若 `generation` 或 `disposed` 变了就丢弃；新刷新开始时 abort 上一个子进程。
 - **失败即降级**：超时/非 0 退出 → 保留上一帧 + 行尾 dim ` ·stale`；找不到二进制 → 一行安装提示。绝不 throw 到 pi。
-- **外部契约**：stdin JSON（省略 `version`，绝不编造 `rate_limits`；`COLUMNS` 控制折行）+ stdout ANSI；单次请求耗时另写 `~/.claude/ccline/bridge/<session>.json`（ccline `timing.*` 的数据源）。
+- **外部契约**：stdin JSON（省略 `version`，绝不编造 `rate_limits`；`COLUMNS` 控制折行）+ stdout ANSI；单次请求耗时与运行中工具另写 `~/.claude/ccline/bridge/<session>.json`（ccline `timing.*` / `activity.tools` 的数据源）。
 
 ### 不可违反的不变量
 
@@ -60,7 +60,7 @@ cwd = 本包根目录。以下均已验证。
 
 | 命令 | 作用 | 何时用 |
 |---|---|---|
-| `npm test`（= `node --test`） | 全部 88 个测试，约 22s（footer 集成测试用真实定时器） | 任何改动后的唯一硬门禁 |
+| `npm test`（= `node --test`） | 全部 91 个测试，约 23s（footer 集成测试用真实定时器） | 任何改动后的唯一硬门禁 |
 | `node --test extensions/pi-ccline/render.test.ts` | 单文件 | 定点调试 |
 | `node --test --test-name-pattern="visible width" extensions/pi-ccline/render.test.ts` | 按标题过滤 | 单个行为 |
 | `npm run render-once` | 默认 fixture，宽度 120 + 40 各跑一次真实 ccline | 改了 `input.ts` / `render.ts` / `binary.ts` 后必跑 |
@@ -121,7 +121,7 @@ cwd = 本包根目录。以下均已验证。
 | `extensions/pi-ccline/index.ts` | 入口工厂、`CclineFooter`、全部事件接线、`/pi-ccline on\|off\|status\|path`；多数不变量落在这里 |
 | `extensions/pi-ccline/input.ts` | pi → ccline 字段映射（纯函数）；「不伪造数据」的省略规则、provider 后缀、成本/上下文汇总 |
 | `extensions/pi-ccline/refresh.ts` | 并发核心：单飞 + 节流 + latest-wins + ticker；改错会进程风暴或竞态 |
-| `extensions/pi-ccline/turn.ts` | 流事件计时（ttft / tps）与 ccline bridge 写入；写错格式或路径会让 `timing.*` 整段消失 |
+| `extensions/pi-ccline/turn.ts` | 流事件计时（ttft / tps）、运行中工具跟踪与 ccline bridge 写入；写错格式或路径会让 `timing.*` / `activity.tools` 整段消失，漏传 `timing` 会把 tok/s 清空 |
 | `extensions/pi-ccline/binary.ts` | 解析顺序 `config.binary` → `~/.claude/ccline/ccline` → `PATH`；spawn 契约、超时、abort、`probeVersion` |
 | `extensions/pi-ccline/render.ts` | ANSI 安全切分/截断、notice、stale 标记、扩展状态行；所有视觉正确性规则 |
 | `extensions/pi-ccline/config.ts` | 默认值、clamp、原子读写；决定全部可调行为与容错 |
@@ -147,7 +147,7 @@ cwd = 本包根目录。以下均已验证。
   - 子进程边界：`mkdtempSync` 里写 `chmod 0755` 的 `/bin/sh` 脚本，`cat > /dev/null; printf 'ANSI…'`。
   - 时钟：注入 `FakeClock` / `FakeIntervalClock`。
   - 宿主对象：普通对象 + `as unknown as ExtensionContext`（`footer.test.ts` 的 `fakeContext` / `fakePi` / `footerData`）。
-- 覆盖：无 coverage 配置、无阈值（`node --test --experimental-test-coverage` 可用但不接入）。当前 88 项全绿。
+- 覆盖：无 coverage 配置、无阈值（`node --test --experimental-test-coverage` 可用但不接入）。当前 91 项全绿。
 - 三层验证，按改动面选择：
   1. 单元：`npm test`（每次都跑；集成测试有真实定时器，机器繁忙时可能抖动）。
   2. 真实二进制：改了输入映射/渲染/二进制解析 → `npm run render-once`，宽度 120 与 40 都要看，确认不越界、不缺段。
