@@ -66,6 +66,11 @@ export const DEFAULT_STATUS_BADGES: Record<string, StatusBadge> = {
 	// docs tools, so one magnifier covers all of them. The text is plain, hence
 	// the whole row takes the color; blue keeps it apart from the accent badges.
 	search: { icon: "\uf002", color: "mdLink" },
+	// pi-ssh-remote sends `user@host:path` already colored: accent while
+	// connected, warning while connecting or reconnecting. The icon takes accent
+	// to match the text it normally sits next to, and only the icon is painted so
+	// the warning state keeps its own color.
+	"ssh-remote": { icon: "\uf233", color: "accent" },
 };
 
 /** An icon longer than this is a typo or a whole path, not a glyph. */

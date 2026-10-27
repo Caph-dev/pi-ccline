@@ -244,6 +244,30 @@ test("pi-telegram's colored status keeps its colors and gains the icon", async (
 	harness.footer.dispose();
 });
 
+test("pi-ssh-remote's colored host line keeps its colors and gains the server icon", async () => {
+	// pi-ssh-remote sends `accent(user@host:path)` while connected and
+	// `warning(reconnecting …)` while it reconnects, so the badge may only add
+	// the icon and leave whichever color the plugin chose in place.
+	const connected = "\u001b[36mubuntu@43.156.169.21:/home/ubuntu\u001b[39m";
+	const statuses = new Map([["ssh-remote", connected]]);
+	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'F\\n'") }, undefined, statuses);
+	harness.render(120);
+	await waitFor(() => harness.footer.hasFrame);
+	const row = harness.render(120)[0] ?? "";
+	assert.equal(
+		row.replace(/\u001b\[[0-9;]*m/g, ""),
+		`F ${DEFAULT_STATUS_BADGES["ssh-remote"]?.icon} ubuntu@43.156.169.21:/home/ubuntu`,
+	);
+	assert.ok(row.includes(connected), "the plugin's own accent survives");
+	assert.ok(visibleWidth(row) <= 120, `visible width was ${visibleWidth(row)}`);
+
+	const reconnecting = "\u001b[33mreconnecting ubuntu@43.156.169.21…\u001b[39m";
+	statuses.set("ssh-remote", reconnecting);
+	const next = harness.render(120)[0] ?? "";
+	assert.ok(next.includes(reconnecting), "the warning state keeps its own color too");
+	harness.footer.dispose();
+});
+
 test("pi-search's plain search row gets the built-in magnifier badge", async () => {
 	// pi-search sends `Search | <model> | think:<level>` unstyled and clears it
 	// when the tool returns, so the row may only be decorated, never rewritten.

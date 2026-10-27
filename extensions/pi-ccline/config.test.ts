@@ -87,11 +87,21 @@ test("ships a built-in badge for pi-search's plain search row", () => {
 	});
 });
 
+test("ships a built-in badge for pi-ssh-remote's host line", () => {
+	// pi-ssh-remote colors that status itself (`accent` connected, `warning`
+	// reconnecting), so the icon is the only part the badge decides.
+	assert.deepEqual(resolveStatusBadges(undefined)["ssh-remote"], { icon: "\uf233", color: "accent" });
+	assert.deepEqual(resolveStatusBadges(normalizeConfig({ statusBadges: { "ssh-remote": { color: "warning" } } }).statusBadges)["ssh-remote"], {
+		icon: "\uf233",
+		color: "warning",
+	});
+});
+
 test("badges can be added for other status keys, and unusable entries are dropped", () => {
 	const config = normalizeConfig({
 		statusBadges: {
-			"ssh-remote": { color: "success" },
-			" ssh-remote ": { color: "error" },
+			"cursor-fast": { color: "success" },
+			" cursor-fast ": { color: "error" },
 			["x".repeat(65)]: { icon: "y" },
 			mcp: { icon: "\n\t" },
 			broken: 5,
@@ -100,7 +110,7 @@ test("badges can be added for other status keys, and unusable entries are droppe
 	});
 	// Keys are matched verbatim against `setStatus` keys, so a padded or oversized
 	// key is dropped rather than rewritten into something that can only miss.
-	assert.deepEqual(config.statusBadges, { "ssh-remote": { color: "success" } });
+	assert.deepEqual(config.statusBadges, { "cursor-fast": { color: "success" } });
 });
 
 test("prototype-named keys stay own data properties", () => {

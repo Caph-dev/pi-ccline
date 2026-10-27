@@ -114,6 +114,8 @@ package.json
 
 - 2026-10-27 **其他扩展的 status 放得下就并进最后一行**。`render.ts` 新增 `mergeStatusIntoLastLine`：整条 status（含徽标）加分隔空格仍放得进当前宽度时，追加到最后一条 ccline 行尾；放不下就保留原来的独占行再截断。不为合并而裁剪 status 本身。验证：`npm test` 全绿，新增合并且独占行、ANSI/宽字形宽度、无行可附、整条过宽四组用例。
 
+- 2026-10-27 **pi-ssh-remote 的 `ssh-remote` 状态加服务器徽标**。该插件自己用 `theme.fg("accent", …)` 给 `user@host:path` 上色、重连时改用 `warning`，所以内置徽标只给图标上色（`U+F233` `nf-fa-server` + `accent`），文本颜色原样保留；图标落在 BMP 的 Font Awesome 段，与已有三条徽标一致；pi-tui 的 `visibleWidth` 把该码位计为 1 格（实测），footer 用例另断言整行不越宽。验证：`npm test` 119 项全绿，含「连接态与重连态都保留自己的颜色」的 footer 端到端用例。
+
 ## 10. 参考
 
 - pi 安装目录：`/Users/caph/.local/share/fnm/node-versions/v24.15.0/installation/lib/node_modules/@earendil-works/pi-coding-agent`
