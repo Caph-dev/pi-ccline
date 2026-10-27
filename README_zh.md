@@ -91,7 +91,7 @@ pi install .
 | `liveRefreshMs` | `1000` | agent 运行期间的定时刷新间隔（让 `耗时` 逐秒走）；`0` 关闭定时器，只保留事件刷新。非 0 时低于 250 会被抬到 250 |
 | `showProvider` | `true` | 是否在模型段追加 provider，如 `Sonnet 4.5 (anthropic)`；`false` 只显示模型名。终端窄到模型段被 ccline 截断时 provider 可能不可见 |
 | `env` | `{}` | 追加给 ccline 的环境变量；同名变量覆盖 pi 继承的值（`COLUMNS` 除外，它由扩展按当前宽度写入） |
-| `statusBadges` | `{}` | 给其他扩展 `ctx.ui.setStatus` 那一行加图标和颜色，形状 `{"<status key>": {"icon": "<字形>", "color": "<主题 token>"}}`。内置两条：`pi-herdr-pstack`（它的 `poteto-mode` 状态）→ 火箭 `U+F135` + `accent`，`telegram` → `U+F2C6` + `accent`。字段按项合并到内置条目上，所以 `{"pi-herdr-pstack": {"icon": ""}}` 只去掉图标、保留颜色；两个字段都写 `""` 即去掉徽标。status key 与 `setStatus` 的 key 逐字匹配。图标一律加；颜色在文本没上色时刷整段，在发它的扩展已经自己上色时只刷图标（pi-telegram 就是自己上色的）。主题里不存在的 token 回退成不上色 |
+| `statusBadges` | `{}` | 给其他扩展 `ctx.ui.setStatus` 那一行加图标和颜色，形状 `{"<status key>": {"icon": "<字形>", "color": "<主题 token>"}}`。内置两条：`pi-herdr-pstack`（它的 `poteto-mode` 状态）→ 魔法棒 `U+F0D0` + `accent`，`telegram` → `U+F2C6` + `accent`。字段按项合并到内置条目上，所以 `{"pi-herdr-pstack": {"icon": ""}}` 只去掉图标、保留颜色；两个字段都写 `""` 即去掉徽标。status key 与 `setStatus` 的 key 逐字匹配。图标一律加；颜色在文本没上色时刷整段，在发它的扩展已经自己上色时只刷图标（pi-telegram 就是自己上色的）。主题里不存在的 token 回退成不上色 |
 
 二进制解析顺序：`config.binary` → `~/.claude/ccline/ccline` → `PATH` 中的 `ccline`。
 

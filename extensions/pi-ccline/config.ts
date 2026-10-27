@@ -58,7 +58,7 @@ export type StatusBadgeOverride = Partial<StatusBadge>;
  */
 export const DEFAULT_STATUS_BADGES: Record<string, StatusBadge> = {
 	// pi-herdr-pstack keeps this key while the sticky poteto methodology is on.
-	"pi-herdr-pstack": { icon: "\uf135", color: "accent" },
+	"pi-herdr-pstack": { icon: "\uf0d0", color: "accent" },
 	// pi-telegram colors its own label and state, so only the icon takes the color.
 	telegram: { icon: "\uf2c6", color: "accent" },
 };
