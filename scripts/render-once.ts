@@ -2,6 +2,8 @@
 //
 //   node --experimental-strip-types scripts/render-once.ts
 //   node --experimental-strip-types scripts/render-once.ts --fixture fixtures/basic.json --width 120 --width 40
+//   ... --no-provider   (simulate the footer's narrow-width gate: below 80 columns
+//                        it drops a trailing "(provider)" from the fixture's model name)
 //
 // Runs the real binary (no model call, no pi session) and prints both the raw
 // ANSI bytes and the footer lines pi would receive.
@@ -15,6 +17,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { clearBinaryCache, probeVersion, resolveBinary, spawnCcline } from "../extensions/pi-ccline/binary.ts";
 import { configPath, loadConfig } from "../extensions/pi-ccline/config.ts";
+import { MIN_PROVIDER_WIDTH } from "../extensions/pi-ccline/input.ts";
 import { normalizeFrame } from "../extensions/pi-ccline/render.ts";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,6 +29,12 @@ interface Options {
 	timeoutMs: number;
 	raw: boolean;
 	home: string;
+	/**
+	 * Simulate the footer's narrow-width provider gate. It only applies below
+	 * MIN_PROVIDER_WIDTH, because that is all the footer itself does: a wide
+	 * footer keeps sending the suffix.
+	 */
+	noProvider: boolean;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -36,6 +45,7 @@ function parseArgs(argv: string[]): Options {
 		timeoutMs: 5000,
 		raw: false,
 		home: homedir(),
+		noProvider: false,
 	};
 
 	for (let index = 0; index < argv.length; index += 1) {
@@ -52,6 +62,9 @@ function parseArgs(argv: string[]): Options {
 				break;
 			case "--binary":
 				options.binary = resolve(process.cwd(), next());
+				break;
+			case "--no-provider":
+				options.noProvider = true;
 				break;
 			case "--width":
 				options.widths.push(Number(next()));
@@ -93,7 +106,14 @@ function parseArgs(argv: string[]): Options {
 async function main(): Promise<number> {
 	const options = parseArgs(process.argv.slice(2));
 	const fixtureText = readFileSync(options.fixture, "utf8");
-	const payload = JSON.stringify(JSON.parse(fixtureText));
+	const fixture = JSON.parse(fixtureText) as { model?: { display_name?: unknown } };
+	/** The fixture verbatim: a wide footer sends exactly this. */
+	const payload = JSON.stringify(fixture);
+	const displayName = typeof fixture.model?.display_name === "string" ? fixture.model.display_name : null;
+	const narrowPayload = (() => {
+		if (!options.noProvider || !displayName) return payload;
+		return JSON.stringify({ ...fixture, model: { ...fixture.model, display_name: displayName.replace(/\s*\([^()]*\)\s*$/, "") } });
+	})();
 	const config = loadConfig(configPath(options.home));
 
 	clearBinaryCache();
@@ -115,9 +135,17 @@ async function main(): Promise<number> {
 
 	let failures = 0;
 	for (const width of options.widths) {
+		// The fixture keeps whatever suffix it was written with; the footer would
+		// not have sent one below MIN_PROVIDER_WIDTH, so render that instead of
+		// letting the extra line look like a layout regression.
+		const narrow = width < MIN_PROVIDER_WIDTH;
+		const hasSuffix = Boolean(displayName && /\s*\([^()]*\)\s*$/.test(displayName));
+		if (narrow && hasSuffix && !options.noProvider) {
+			console.log(`note: the footer drops the provider suffix below ${MIN_PROVIDER_WIDTH} columns; add --no-provider to render what it sends`);
+		}
 		const result = await spawnCcline({
 			binary: resolved.path,
-			payload,
+			payload: narrow ? narrowPayload : payload,
 			timeoutMs: options.timeoutMs,
 			columns: width,
 			env: childEnv,

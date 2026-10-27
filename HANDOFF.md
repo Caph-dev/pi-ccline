@@ -110,6 +110,10 @@ package.json
 
 - 2026-10-26 **新增运行中工具段（activity.tools）**。同一份 bridge 文件里再加 `tools:[{name, since(ms)}]`：`tool_execution_start`/`tool_execution_end` 维护 `Map<toolCallId, {name, since}>`，跳过带 `parentToolCallId` 的嵌套调用（codemode、工具内调工具），并把写入收敛成 `flushBridge()`——每次同时带「上次答完的 turn」与「当前 runningTools」，否则会互相清空（ccline 一个会话只读一个 bridge 文件）。验证：`node --test` 91 项全绿；真实 ccline 2.0.1 在 width 120/80/40 均得到 `Bash · Read · 14s`，与 `99% hit`、`75 tok/s` 共存无越宽；空 tools 时整段消失，嵌套调用不进列表。
 
+- 2026-10-27 **窄 footer 不再追加 provider 后缀**。宽度低于 `MIN_PROVIDER_WIDTH`（80 列，`input.ts`）时不往 `display_name` 里加 `(provider)`，给 ccline 自己的折行留空间；用的是发起本次刷新时捕获的宽度，`showProvider: false` 仍在任何宽度优先。两个开关都表示「屏幕上不要 provider」，所以 `model.name` 里自带的同名后缀也会被 `withoutProvider` 剥掉，`(preview)` 这类其它限定词不动。验证：`npm test` 全绿；真实 ccline 2.0.1 + `render-once --width 120` 输出 `GPT-5.6 Codex (openai-codex) · High │ 15% · 42k/272k │ 99% CH`，`--width 74 --no-provider` 输出 `GPT-5.6 Codex · High │ …`，两行均不越宽。
+
+- 2026-10-27 **其他扩展的 status 放得下就并进最后一行**。`render.ts` 新增 `mergeStatusIntoLastLine`：整条 status（含徽标）加分隔空格仍放得进当前宽度时，追加到最后一条 ccline 行尾；放不下就保留原来的独占行再截断。不为合并而裁剪 status 本身。验证：`npm test` 全绿，新增合并且独占行、ANSI/宽字形宽度、无行可附、整条过宽四组用例。
+
 ## 10. 参考
 
 - pi 安装目录：`/Users/caph/.local/share/fnm/node-versions/v24.15.0/installation/lib/node_modules/@earendil-works/pi-coding-agent`

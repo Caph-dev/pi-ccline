@@ -89,7 +89,7 @@ pi install .
 | `timeoutMs` | `5000` | 单次调用的硬超时（200–60000） |
 | `refreshThrottleMs` | `1000` | 两次刷新最小间隔，低于 1000 会被抬到 1000 |
 | `liveRefreshMs` | `1000` | agent 运行期间的定时刷新间隔（让 `耗时` 逐秒走）；`0` 关闭定时器，只保留事件刷新。非 0 时低于 250 会被抬到 250 |
-| `showProvider` | `true` | 是否在模型段追加 provider，如 `Sonnet 4.5 (anthropic)`；`false` 只显示模型名。终端窄到模型段被 ccline 截断时 provider 可能不可见 |
+| `showProvider` | `true` | 是否在模型段追加 provider，如 `Sonnet 4.5 (anthropic)`；`false` 只显示模型名。宽度低于 80 列时该后缀一律不追加，给 ccline 的折行留出空间；这个开关只决定宽 footer 下显不显示 |
 | `env` | `{}` | 追加给 ccline 的环境变量；同名变量覆盖 pi 继承的值（`COLUMNS` 除外，它由扩展按当前宽度写入） |
 | `statusBadges` | `{}` | 给其他扩展 `ctx.ui.setStatus` 那一行加图标和颜色，形状 `{"<status key>": {"icon": "<字形>", "color": "<主题 token>"}}`。内置三条：`pi-herdr-pstack`（它的 `poteto-mode` 状态）→ 魔法棒 `U+F0D0` + `accent`，`telegram` → `U+F2C6` + `accent`，`search`（pi-search 的工作行，如 `Search | gpt-6-luna | think:high`，以及共用这个 key 的 `Docs Search` / `Context7 …` 行）→ 放大镜 `U+F002` + `mdLink`。字段按项合并到内置条目上，所以 `{"pi-herdr-pstack": {"icon": ""}}` 只去掉图标、保留颜色；两个字段都写 `""` 即去掉徽标。status key 与 `setStatus` 的 key 逐字匹配。图标一律加；颜色在文本没上色时刷整段，在发它的扩展已经自己上色时只刷图标（pi-telegram 就是自己上色的）。主题里不存在的 token 回退成不上色 |
 
@@ -103,10 +103,10 @@ pi install .
 - 超时 5s（可配）或非 0 退出：保留上一帧并在行尾加 ` ·stale`（放得下才加），不刷屏、不抛错。
 - 找不到二进制：footer 显示一行安装提示。
 - 行宽一律用 `visibleWidth` / `truncateToWidth` 计算，不用 `.length`。
-- **其他扩展的 `ctx.ui.setStatus` 照样可见**：`render(width)` 读 `footerData.getExtensionStatuses()`，按 key 排序、用空格拼成一行、超宽时用 dim `…` 截断，追加在 ccline 帧下方——行为对齐 pi 内置 footer。读的是实时 map，`setStatus` 自己会触发重绘，所以状态变化不受 1Hz 节流限制。
+- **其他扩展的 `ctx.ui.setStatus` 照样可见**：`render(width)` 读 `footerData.getExtensionStatuses()`，按 key 排序、用空格拼成一行、超宽时用 dim `…` 截断。整条状态还放得下时，追加到最后一条 ccline 行尾部；放不下才独占一行。两种情况都不会为了合并而裁剪状态本身。读的是实时 map，`setStatus` 自己会触发重绘，所以状态变化不受 1Hz 节流限制。
 - **status 可以带徽标**：`setStatus` 交过来的是文本，有没有上色取决于发它的扩展（pi 自带 footer 不再加任何样式）。所以本扩展按 status key 加 Nerd Font 图标和主题色（内置条目在 `config.ts` 的 `DEFAULT_STATUS_BADGES`，目前是 pi-herdr-pstack 的 `poteto-mode`、pi-telegram，以及 pi-search 的 `search` 行）。图标计入整行的可见宽度再截断；文本自带 ANSI 时只给图标上色，发它的扩展保留自己选的配色；颜色每帧走一次 `theme.fg()`，token 不在主题里就退成纯文本。
 - 因为 footer 槽位全局只有一个，本扩展装上后其他扩展的自定义 footer（例如 pi-cursor-provider 的 fast 徽标）会被顶掉；它们的 status 行仍会显示。反过来它们抢占时 ccline 帧会消失，需要 `/pi-ccline on` 取回。
-- **provider 只能拼进模型段。** ccline 2.0.1 的输入 schema 没有 provider 字段，`model` 段只渲染 `display_name`，所以 provider 以 `名称 (provider)` 的形式追加在模型名后；名字里已经带同样的后缀时不重复追加。`showProvider: false` 可关掉。**窄宽度下 provider 可能看不到**：ccline 按 `COLUMNS` 自己折行/截断，实测宽度 40 时模型段只剩 `GPT-5.6`，这是上游布局行为，本扩展只保证把 provider 写进 `display_name`。
+- **provider 只能拼进模型段。** ccline 2.0.1 的输入 schema 没有 provider 字段，`model` 段只渲染 `display_name`，所以 provider 以 `名称 (provider)` 的形式追加在模型名后；名字里已经带同样的后缀时不重复追加。`showProvider: false` 可关掉。**窄 footer 不再追加它**：宽度低于 `MIN_PROVIDER_WIDTH`（80 列，见 `input.ts`）时不加这个后缀，给 ccline 的折行留出空间。用的是发起本次刷新时捕获的宽度，所以 resize 会在下一次刷新生效；`showProvider: false` 在任何宽度下都优先。两个开关都表示「屏幕上不要出现 provider」，所以 `model.name` 里本来就带的 `(provider)` 也会被剥掉（`withoutProvider`），而 `(preview)` 这类其它限定词不动。至于能省下几行，取决于 ccline 配置、模型名长度和当前宽度——这个阈值只减少折行，不保证行数。除此之外 ccline 仍按 `COLUMNS` 自行折行/截断：宽度 40 时模型段只剩 `GPT-5.6`。
 - 输入 JSON **省略 `version` 字段**：ccline 2.0.1 会把它当 Claude Code 版本校验，传 pi 的版本会被直接拒绝。
 - **缓存命中率：** `prompt_cache` 从第二条 assistant 消息起才发。这是 ccline 自己的显示门槛（`requests > 1`），它的理由是一次请求通常只是在写缓存——但首个请求确实可能命中之前会话已缓存的 prefix，所以这是显示行为，不是对「第一次请求」的事实断言。若在门槛前就发 `hit_ratio`，ccline 还会回退到 `cold` 文案，而那是 pi 无法断言的。`current_usage` 仍然只填 `input_tokens`：pi 的上下文估计值本就包含缓存 token，而缺少 `total_input_tokens` 时 ccline 会把 `current_usage` 各项相加，把 cache 数填进去会让它们被重复计入上下文进度条。
 - **输出速度与运行中的工具走 ccline 的 bridge，不走 stdin。** ccline 的 `timing.tps` / `timing.ttft` 与 `activity.tools` 读的是其数据目录（`$CCLINE_HOME` 或 `~/.claude/ccline`）下的 `bridge/<session>.json`，也就是它家在 Claude Code 里的伴生 mod 写的文件。statusline 载荷里既没有单次请求耗时，也没有运行中工具列表，所以本扩展自己实测、自己跟踪，并按同样的 `v: 1` 结构原子写入。因为两者共用一个文件，每次写入都带全量：最后答完那次请求的计时 + 当前运行中的工具，所以工具起止不会把 `tok/s` 清掉，新回答也不会把已结束的工具留在那里。ttft = 流开始 → 首个内容块；pi 是在 provider 开始响应后才发 `message_start`，所以这个数不含建立连接的等待。tps = 该回答的 output token 除以「首个内容块 → `message_end`」的时长，所以等首字的耗时不算进生成速度。计时用单调时钟（`performance.now()`），只有 bridge 的新鲜度标记用墙钟。`tools` 会跳过带 `parentToolCallId` 的调用（codemode 脚本、工具内部再调工具），所以这段只列用户真正发起的调用。`session_shutdown` 时删除该文件；ccline 也会忽略超过 6 小时的 bridge。
@@ -128,11 +128,14 @@ node --experimental-strip-types scripts/render-once.ts --width 40 --binary ~/.cl
 
 # 完全隔离：配置从该 HOME 读，子进程 HOME 也指向它（state 不会写进你的 ~/.claude）
 node --experimental-strip-types scripts/render-once.ts --home "$(mktemp -d)" --binary ~/.claude/ccline/ccline
+
+# 去掉 fixture 里的 "(provider)" 后缀，也就是 footer 在 80 列以下实际发送的内容
+node --experimental-strip-types scripts/render-once.ts --width 74 --no-provider
 ```
 
 `--home` 会把该目录同时用于三处：查 `~/.claude/ccline/ccline`、读 `<home>/.pi/agent/pi-ccline/config.json`、以及给子进程设置 `HOME`/`USERPROFILE`。如果解析到的是 npm 包装脚本（`@cometix/ccline/bin/ccline.js`），它可能自己往这个 HOME 里铺主题等资源，想得到干净结果就同时用 `--binary` 钉死真实二进制。
 
-`scripts/render-once.ts` 不启动 pi、不发模型请求，只验证「输入 → 二进制 → 行」这一段。
+`scripts/render-once.ts` 不启动 pi、不发模型请求，只验证「输入 → 二进制 → 行」这一段。fixture 里的模型名是写死的，所以宽度低于 80 时会提示 footer 本来会省略的 provider 后缀。`--no-provider` 渲染的是 footer 实际会发送的内容，且只对 80 列以下生效——宽 footer 照样带后缀。
 
 ## 已知限制
 

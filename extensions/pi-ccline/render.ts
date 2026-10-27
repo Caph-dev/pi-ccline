@@ -98,6 +98,22 @@ export function extensionStatusLine(
 }
 
 /**
+ * Append a status to the last ccline line when the whole status still fits.
+ * pi's built-in footer gives statuses a row of their own, which here costs a
+ * whole line for a few words. Nothing is cut to make room: a status that does
+ * not fit keeps its own row, where the caller truncates it as before.
+ */
+export function mergeStatusIntoLastLine(lines: string[], status: string | null, width: number): string[] | null {
+	if (!status || lines.length === 0) return null;
+	const safeWidth = Math.max(1, Math.floor(width));
+	if (visibleWidth(status) > safeWidth) return null;
+	const last = lines[lines.length - 1] ?? "";
+	const merged = `${last} ${status}`;
+	if (visibleWidth(merged) > safeWidth) return null;
+	return [...lines.slice(0, -1), merged];
+}
+
+/**
  * Append a marker to the last line when it still fits. A stale frame is kept
  * visible instead of blanking the footer, and the marker stays opt-in.
  */

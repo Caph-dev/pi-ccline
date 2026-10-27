@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildCclineInput, collectSnapshot, type BranchEntryLike, type PiSnapshot, type SnapshotContextLike } from "./input.ts";
+import { buildCclineInput, collectSnapshot, MIN_PROVIDER_WIDTH, type BranchEntryLike, type PiSnapshot, type SnapshotContextLike } from "./input.ts";
 
 function snapshot(overrides: Partial<PiSnapshot> = {}): PiSnapshot {
 	return {
@@ -116,6 +116,40 @@ test("showProvider false or an unknown provider keeps the bare name", () => {
 		id: "m",
 		display_name: "Sonnet 4.5",
 	});
+});
+
+test("drops the provider suffix on a narrow footer, keeping it on a wide one", () => {
+	const model = { id: "m", name: "Sonnet 4.5", provider: "anthropic" };
+	const at = (width: number) => (buildCclineInput(snapshot({ model }), { width }).model as Record<string, string>).display_name;
+	assert.equal(at(MIN_PROVIDER_WIDTH - 1), "Sonnet 4.5");
+	assert.equal(at(MIN_PROVIDER_WIDTH), "Sonnet 4.5 (anthropic)");
+	assert.equal(at(200), "Sonnet 4.5 (anthropic)");
+	// No width yet means the footer has not painted; an unknown size drops nothing.
+	assert.equal(at(Number.NaN), "Sonnet 4.5 (anthropic)");
+	assert.equal((buildCclineInput(snapshot({ model })).model as Record<string, string>).display_name, "Sonnet 4.5 (anthropic)");
+});
+
+test("a provider already inside the model name is removed when the footer turns it off", () => {
+	const model = { id: "m", name: "Sonnet 4.5 (anthropic)", provider: "anthropic" };
+	const display = (options: { showProvider?: boolean; width?: number }) =>
+		(buildCclineInput(snapshot({ model }), options).model as Record<string, string>).display_name;
+	assert.equal(display({ width: MIN_PROVIDER_WIDTH - 1 }), "Sonnet 4.5", "a narrow footer must not keep it either");
+	assert.equal(display({ width: MIN_PROVIDER_WIDTH }), "Sonnet 4.5 (anthropic)", "a wide footer keeps the name as-is");
+	assert.equal(display({ showProvider: false, width: 200 }), "Sonnet 4.5");
+	// Only this provider's own suffix is stripped; a name qualifier survives.
+	const preview = { id: "m", name: "Sonnet 4.5 (preview)", provider: "anthropic" };
+	assert.equal(
+		(buildCclineInput(snapshot({ model: preview }), { width: 60 }).model as Record<string, string>).display_name,
+		"Sonnet 4.5 (preview)",
+	);
+});
+
+test("showProvider false wins at any width", () => {
+	const model = { id: "m", name: "Sonnet 4.5", provider: "anthropic" };
+	const display = (width: number) =>
+		(buildCclineInput(snapshot({ model }), { showProvider: false, width }).model as Record<string, string>).display_name;
+	assert.equal(display(40), "Sonnet 4.5");
+	assert.equal(display(200), "Sonnet 4.5");
 });
 
 test("omits blank strings instead of sending empty values", () => {

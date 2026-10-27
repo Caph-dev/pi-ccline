@@ -188,7 +188,19 @@ export function collectSnapshot(ctx: SnapshotContextLike, nowMs: number): PiSnap
 export interface BuildCclineInputOptions {
 	/** Append the provider to the model segment: `Sonnet 4.5 (anthropic)`. */
 	showProvider?: boolean | undefined;
+	/**
+	 * Footer width in columns. The provider suffix is a wide, low-value string on
+	 * the model segment, which is the first segment ccline wraps, so a narrow
+	 * footer drops it instead of pushing the rest of the row down one line.
+	 */
+	width?: number | undefined;
 }
+
+/**
+ * Below this the `(provider)` suffix costs about as much as the segment it
+ * decorates. `showProvider: false` still wins at every width.
+ */
+export const MIN_PROVIDER_WIDTH = 80;
 
 /**
  * ccline 2.0.1 has no provider field: the only place a provider can surface is
@@ -202,11 +214,32 @@ export function withProvider(name: string, provider: string | undefined, enabled
 }
 
 /**
+ * The mirror image of `withProvider`: a model name may already end in
+ * `(provider)` (pi reports what the provider calls itself), and a footer that
+ * turned the provider off must not keep showing it just because it arrived
+ * inside the name. Only a suffix equal to this provider is removed, so a name
+ * like `Foo (preview)` survives.
+ */
+export function withoutProvider(name: string, provider: string | undefined): string {
+	if (!name || !provider) return name;
+	const suffix = `(${provider})`;
+	if (!name.toLowerCase().endsWith(suffix.toLowerCase())) return name;
+	const stripped = name.slice(0, name.length - suffix.length).trim();
+	return stripped || name;
+}
+
+/**
  * Build the ccline stdin payload.
  *
  * `version` is intentionally never set: ccline 2.0.1 parses it as the Claude
  * Code version and rejects anything older than 2.1.153.
  */
+/** An unknown width means the footer has not painted yet, so nothing is dropped. */
+function providerFits(width: number | undefined): boolean {
+	if (width === undefined || !Number.isFinite(width)) return true;
+	return width >= MIN_PROVIDER_WIDTH;
+}
+
 export function buildCclineInput(snapshot: PiSnapshot, options: BuildCclineInputOptions = {}): Record<string, unknown> {
 	const input: Record<string, unknown> = {};
 
@@ -221,7 +254,12 @@ export function buildCclineInput(snapshot: PiSnapshot, options: BuildCclineInput
 	if (modelId || modelName) {
 		const model: Record<string, string> = {};
 		if (modelId) model.id = modelId;
-		model.display_name = withProvider(modelName ?? modelId ?? "", trimmed(snapshot.model?.provider), options.showProvider !== false);
+		const name = modelName ?? modelId ?? "";
+		const provider = trimmed(snapshot.model?.provider);
+		// Both switches mean "no provider on screen", so a suffix that arrived
+		// inside the name goes away too instead of lingering on a narrow footer.
+		const wantsProvider = options.showProvider !== false && providerFits(options.width);
+		model.display_name = wantsProvider ? withProvider(name, provider, true) : withoutProvider(name, provider);
 		input.model = model;
 	}
 

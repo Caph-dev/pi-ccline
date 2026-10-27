@@ -5,7 +5,15 @@ import { clearBinaryCache, probeVersion, resolveBinary, spawnCcline, type Resolv
 import { loadConfig, resolveStatusBadges, saveConfig, type PiCclineConfig, type StatusBadge } from "./config.ts";
 import { buildCclineInput, collectSnapshot } from "./input.ts";
 import { RefreshScheduler, RefreshTicker } from "./refresh.ts";
-import { extensionStatusLine, loadingNotice, missingBinaryNotice, normalizeFrame, noticeFrame, withStaleMarker } from "./render.ts";
+import {
+	extensionStatusLine,
+	loadingNotice,
+	mergeStatusIntoLastLine,
+	missingBinaryNotice,
+	normalizeFrame,
+	noticeFrame,
+	withStaleMarker,
+} from "./render.ts";
 import { removeTurnBridge, TurnMeter, writeBridge, type BridgeTool, type TurnTiming } from "./turn.ts";
 
 /** Structural subsets so the footer does not depend on pi-tui internals. */
@@ -291,7 +299,11 @@ export class CclineFooter {
 			// render.ts catches a throwing token, so a stale theme entry costs only its color.
 			colorize: this.theme ? (color, text) => this.theme?.fg(color, text) ?? text : null,
 		});
-		return status ? [...lines, status] : lines;
+		if (!status) return lines;
+		// A few words are not worth a whole row: keep the status on the last line
+		// when it fits as-is, and fall back to its own row when it does not.
+		const merged = mergeStatusIntoLastLine(lines, status, safeWidth);
+		return merged ?? [...lines, status];
 	}
 
 	private applyFrame(lines: string[], stale: boolean, error: string | null): void {
@@ -318,7 +330,7 @@ export class CclineFooter {
 		this.controller = controller;
 
 		const snapshot = collectSnapshot(this.ctx, Date.now());
-		const payload = JSON.stringify(buildCclineInput(snapshot, { showProvider: this.config.showProvider }));
+		const payload = JSON.stringify(buildCclineInput(snapshot, { showProvider: this.config.showProvider, width: this.width }));
 
 		const result = await spawnCcline({
 			binary: binary.path,

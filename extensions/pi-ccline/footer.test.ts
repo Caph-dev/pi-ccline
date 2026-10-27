@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, test } from "node:test";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { clearBinaryCache } from "./binary.ts";
 import { DEFAULT_CONFIG, DEFAULT_STATUS_BADGES, type PiCclineConfig } from "./config.ts";
@@ -172,33 +173,46 @@ test("shows a failure notice instead of a blank footer when ccline always fails"
 	harness.footer.dispose();
 });
 
-test("shows extension statuses on an extra row below the ccline frame", async () => {
+test("appends extension statuses to the last frame line when they fit", async () => {
 	const binary = fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'");
 	const statuses = new Map([["other-plugin", "Other status"]]);
 	const harness = attach({ binary }, undefined, statuses);
 	harness.render(80);
 	await waitFor(() => harness.footer.hasFrame);
-	assert.deepEqual(harness.render(80), ["FAKE-CCLINE", "Other status"]);
+	assert.deepEqual(harness.render(80), ["FAKE-CCLINE Other status"]);
 
 	// pi repaints on setStatus, so a later change needs no refresh of the frame.
 	statuses.set("cursor-fast", "Cursor fast: on");
-	assert.deepEqual(harness.render(80), ["FAKE-CCLINE", "Cursor fast: on Other status"]);
+	assert.deepEqual(harness.render(80), ["FAKE-CCLINE Cursor fast: on Other status"]);
 	statuses.clear();
 	assert.deepEqual(harness.render(80), ["FAKE-CCLINE"]);
 	harness.footer.dispose();
 });
 
-test("shows extension statuses even before ccline has produced a frame", () => {
-	const statuses = new Map([["cursor-fast", "Cursor fast: off"]]);
-	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'LATE\\n'") }, undefined, statuses);
-	const lines = harness.render(80);
-	assert.equal(lines.length, 2);
-	assert.match(lines[0] ?? "", /ccline/);
-	assert.equal(lines[1], "Cursor fast: off");
+test("gives a status its own truncated row when the last line leaves no room", async () => {
+	const binary = fakeBinary("cat > /dev/null; printf '0123456789012345678901234\\n'");
+	const harness = attach({ binary }, undefined, new Map([["k", "status that cannot fit next to it"]]));
+	harness.render(30);
+	await waitFor(() => harness.footer.hasFrame);
+	const lines = harness.render(30);
+	assert.equal(lines.length, 2, "the status keeps a row of its own instead of being merged");
+	assert.equal(lines[0], "0123456789012345678901234");
+	assert.equal(lines[1]?.replace(/\u001b\[[0-9;]*m/g, ""), "status that cannot fit next t…");
+	for (const line of lines) assert.ok(visibleWidth(line) <= 30, `visible width was ${visibleWidth(line)}`);
 	harness.footer.dispose();
 });
 
-test("the built-in poteto-mode badge decorates the pi-herdr-pstack status", () => {
+test("a status added while only the loading notice is up joins that notice", () => {
+	const statuses = new Map([["cursor-fast", "Cursor fast: off"]]);
+	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'LATE\\n'") }, undefined, statuses);
+	const lines = harness.render(80);
+	assert.equal(lines.length, 1);
+	assert.match(lines[0] ?? "", /ccline/);
+	assert.match(lines[0] ?? "", /Cursor fast: off/);
+	harness.footer.dispose();
+});
+
+test("the built-in poteto-mode badge decorates the pi-herdr-pstack status", async () => {
 	// The fake theme wraps everything in dim, so the marker proves the badge color
 	// path ran through theme.fg rather than being pasted on unconditionally.
 	const statuses = new Map([
@@ -206,24 +220,31 @@ test("the built-in poteto-mode badge decorates the pi-herdr-pstack status", () =
 		["other-plugin", "Other status"],
 	]);
 	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'") }, undefined, statuses);
-	const [statusRow] = harness.render(80).slice(1);
-	assert.equal(statusRow?.replace(/\u001b\[[0-9;]*m/g, ""), `Other status ${DEFAULT_STATUS_BADGES["pi-herdr-pstack"]?.icon} poteto-mode`);
+	harness.render(80);
+	await waitFor(() => harness.footer.hasFrame);
+	const [statusRow] = harness.render(80);
+	assert.equal(
+		statusRow?.replace(/\u001b\[[0-9;]*m/g, ""),
+		`FAKE-CCLINE Other status ${DEFAULT_STATUS_BADGES["pi-herdr-pstack"]?.icon} poteto-mode`,
+	);
 	assert.match(statusRow ?? "", /\u001b\[2m/, "the badge is colored through the theme");
 	harness.footer.dispose();
 });
 
-test("pi-telegram's colored status keeps its colors and gains the icon", () => {
+test("pi-telegram's colored status keeps its colors and gains the icon", async () => {
 	// lib/status.ts renders `accent(label) muted|warning|success(state)`, so the
 	// badge may only prepend its own icon.
 	const telegram = "\u001b[36mtelegram\u001b[39m \u001b[32mconnected\u001b[39m";
 	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'F\\n'") }, undefined, new Map([["telegram", telegram]]));
-	const row = harness.render(120)[1] ?? "";
-	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `${DEFAULT_STATUS_BADGES.telegram?.icon} telegram connected`);
+	harness.render(120);
+	await waitFor(() => harness.footer.hasFrame);
+	const row = harness.render(120)[0] ?? "";
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `F ${DEFAULT_STATUS_BADGES.telegram?.icon} telegram connected`);
 	assert.ok(row.includes(telegram), "the plugin's own styling survives");
 	harness.footer.dispose();
 });
 
-test("pi-search's plain search row gets the built-in magnifier badge", () => {
+test("pi-search's plain search row gets the built-in magnifier badge", async () => {
 	// pi-search sends `Search | <model> | think:<level>` unstyled and clears it
 	// when the tool returns, so the row may only be decorated, never rewritten.
 	const harness = attach(
@@ -231,23 +252,52 @@ test("pi-search's plain search row gets the built-in magnifier badge", () => {
 		undefined,
 		new Map([["search", "Search | gpt-6-luna | think:high"]]),
 	);
-	const row = harness.render(120)[1] ?? "";
-	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `${DEFAULT_STATUS_BADGES.search?.icon} Search | gpt-6-luna | think:high`);
+	harness.render(120);
+	await waitFor(() => harness.footer.hasFrame);
+	const row = harness.render(120)[0] ?? "";
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `FAKE-CCLINE ${DEFAULT_STATUS_BADGES.search?.icon} Search | gpt-6-luna | think:high`);
 	assert.match(row, /\u001b\[2m/, "the whole row takes the badge color through theme.fg");
 	harness.footer.dispose();
 });
 
-test("a configured badge override reaches the rendered row", () => {
+test("a configured badge override reaches the rendered row", async () => {
 	const statuses = new Map([["pi-herdr-pstack", "poteto-mode"]]);
 	const harness = attach(
 		{ binary: fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'"), statusBadges: { "pi-herdr-pstack": { icon: "" } } },
 		undefined,
 		statuses,
 	);
-	const row = harness.render(80)[1] ?? "";
-	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), "poteto-mode");
+	harness.render(80);
+	await waitFor(() => harness.footer.hasFrame);
+	const row = harness.render(80)[0] ?? "";
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), "FAKE-CCLINE poteto-mode");
 	assert.match(row, /\u001b\[2m/, "clearing the icon keeps the configured color");
 	harness.footer.dispose();
+});
+
+test("the provider suffix follows the width the refresh was built for", async () => {
+	const withProvider = (binary: string) =>
+		new CclineFooter(
+			{
+				...fakeContext(),
+				model: { id: "test-model", name: "Test Model", provider: "anthropic", contextWindow: 100_000 },
+			} as unknown as ExtensionContext,
+			{ ...DEFAULT_CONFIG, binary },
+		);
+
+	const payloadAt = async (width: number): Promise<string> => {
+		const captured = join(tempDir("pi-ccline-provider-"), "stdin.json");
+		const binary = fakeBinary(`cat > "${captured}"; printf 'FAKE\\n'`);
+		const harness = attach({ binary }, withProvider(binary));
+		harness.render(width);
+		await waitFor(() => harness.footer.hasFrame);
+		const payload = readFileSync(captured, "utf8");
+		harness.footer.dispose();
+		return payload;
+	};
+
+	assert.match(await payloadAt(120), /Test Model \(anthropic\)/, "a wide footer can afford the suffix");
+	assert.match(await payloadAt(60), /"display_name":"Test Model"/, "a narrow footer drops it instead of wrapping");
 });
 
 test("live ticking advances time-based segments and stops with the agent run", async () => {
