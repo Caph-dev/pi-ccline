@@ -76,6 +76,17 @@ test("ships a built-in poteto-mode badge and lets the config override it field b
 	});
 });
 
+test("ships a built-in badge for pi-search's plain search row", () => {
+	const resolved = resolveStatusBadges(undefined);
+	assert.deepEqual(resolved.search, { icon: "\uf002", color: "mdLink" });
+	// pi-search drives the same key for its docs/context7 rows, so the badge is
+	// attached to the key only and a user override still merges field by field.
+	assert.deepEqual(resolveStatusBadges(normalizeConfig({ statusBadges: { search: { icon: "" } } }).statusBadges).search, {
+		icon: "",
+		color: "mdLink",
+	});
+});
+
 test("badges can be added for other status keys, and unusable entries are dropped", () => {
 	const config = normalizeConfig({
 		statusBadges: {

@@ -61,6 +61,11 @@ export const DEFAULT_STATUS_BADGES: Record<string, StatusBadge> = {
 	"pi-herdr-pstack": { icon: "\uf0d0", color: "accent" },
 	// pi-telegram colors its own label and state, so only the icon takes the color.
 	telegram: { icon: "\uf2c6", color: "accent" },
+	// pi-search uses one key for its whole working row: `Search | <model> |
+	// think:<level>` while a search runs, and `Docs Search` / `Context7 …` for the
+	// docs tools, so one magnifier covers all of them. The text is plain, hence
+	// the whole row takes the color; blue keeps it apart from the accent badges.
+	search: { icon: "\uf002", color: "mdLink" },
 };
 
 /** An icon longer than this is a typo or a whole path, not a glyph. */

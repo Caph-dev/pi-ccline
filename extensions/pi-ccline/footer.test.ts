@@ -223,6 +223,20 @@ test("pi-telegram's colored status keeps its colors and gains the icon", () => {
 	harness.footer.dispose();
 });
 
+test("pi-search's plain search row gets the built-in magnifier badge", () => {
+	// pi-search sends `Search | <model> | think:<level>` unstyled and clears it
+	// when the tool returns, so the row may only be decorated, never rewritten.
+	const harness = attach(
+		{ binary: fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'") },
+		undefined,
+		new Map([["search", "Search | gpt-6-luna | think:high"]]),
+	);
+	const row = harness.render(120)[1] ?? "";
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `${DEFAULT_STATUS_BADGES.search?.icon} Search | gpt-6-luna | think:high`);
+	assert.match(row, /\u001b\[2m/, "the whole row takes the badge color through theme.fg");
+	harness.footer.dispose();
+});
+
 test("a configured badge override reaches the rendered row", () => {
 	const statuses = new Map([["pi-herdr-pstack", "poteto-mode"]]);
 	const harness = attach(
