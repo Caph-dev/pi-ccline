@@ -179,13 +179,13 @@ test("appends extension statuses to the last frame line when they fit", async ()
 	const harness = attach({ binary }, undefined, statuses);
 	harness.render(80);
 	await waitFor(() => harness.footer.hasFrame);
-	assert.deepEqual(harness.render(80), ["FAKE-CCLINE Other status"]);
+	assert.deepEqual(harness.render(80), ["FAKE-CCLINE \u2502 Other status"]);
 
 	// pi repaints on setStatus, so a later change needs no refresh of the frame.
 	statuses.set("cursor-fast", "Fast");
 	assert.equal(
 		harness.render(80)[0]?.replace(/\u001b\[[0-9;]*m/g, ""),
-		`FAKE-CCLINE ${DEFAULT_STATUS_BADGES["cursor-fast"]?.icon} Fast Other status`,
+		`FAKE-CCLINE \u2502 ${DEFAULT_STATUS_BADGES["cursor-fast"]?.icon} Fast Other status`,
 	);
 	statuses.clear();
 	assert.deepEqual(harness.render(80), ["FAKE-CCLINE"]);
@@ -228,7 +228,7 @@ test("the built-in poteto-mode badge decorates the pi-herdr-pstack status", asyn
 	const [statusRow] = harness.render(80);
 	assert.equal(
 		statusRow?.replace(/\u001b\[[0-9;]*m/g, ""),
-		`FAKE-CCLINE Other status ${DEFAULT_STATUS_BADGES["pi-herdr-pstack"]?.icon} poteto-mode`,
+		`FAKE-CCLINE \u2502 Other status ${DEFAULT_STATUS_BADGES["pi-herdr-pstack"]?.icon} poteto-mode`,
 	);
 	assert.match(statusRow ?? "", /\u001b\[2m/, "the badge is colored through the theme");
 	harness.footer.dispose();
@@ -242,7 +242,7 @@ test("pi-telegram's colored status keeps its colors and gains the icon", async (
 	harness.render(120);
 	await waitFor(() => harness.footer.hasFrame);
 	const row = harness.render(120)[0] ?? "";
-	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `F ${DEFAULT_STATUS_BADGES.telegram?.icon} telegram connected`);
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `F \u2502 ${DEFAULT_STATUS_BADGES.telegram?.icon} telegram connected`);
 	assert.ok(row.includes(telegram), "the plugin's own styling survives");
 	harness.footer.dispose();
 });
@@ -259,7 +259,7 @@ test("pi-ssh-remote's colored host line keeps its colors and gains the server ic
 	const row = harness.render(120)[0] ?? "";
 	assert.equal(
 		row.replace(/\u001b\[[0-9;]*m/g, ""),
-		`F ${DEFAULT_STATUS_BADGES["ssh-remote"]?.icon} ubuntu@43.156.169.21:/home/ubuntu`,
+		`F \u2502 ${DEFAULT_STATUS_BADGES["ssh-remote"]?.icon} ubuntu@43.156.169.21:/home/ubuntu`,
 	);
 	assert.ok(row.includes(connected), "the plugin's own accent survives");
 	assert.ok(visibleWidth(row) <= 120, `visible width was ${visibleWidth(row)}`);
@@ -282,7 +282,7 @@ test("pi-search's plain search row gets the built-in magnifier badge", async () 
 	harness.render(120);
 	await waitFor(() => harness.footer.hasFrame);
 	const row = harness.render(120)[0] ?? "";
-	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `FAKE-CCLINE ${DEFAULT_STATUS_BADGES.search?.icon} Search | gpt-6-luna | think:high`);
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `FAKE-CCLINE \u2502 ${DEFAULT_STATUS_BADGES.search?.icon} Search | gpt-6-luna | think:high`);
 	assert.match(row, /\u001b\[2m/, "the whole row takes the badge color through theme.fg");
 	harness.footer.dispose();
 });
@@ -293,7 +293,7 @@ test("pi-cursor-provider's Fast status gets the built-in bolt", async () => {
 	harness.render(80);
 	await waitFor(() => harness.footer.hasFrame);
 	const enabled = harness.render(80)[0] ?? "";
-	assert.equal(enabled.replace(/\u001b\[[0-9;]*m/g, ""), `F ${DEFAULT_STATUS_BADGES["cursor-fast"]?.icon} Fast`);
+	assert.equal(enabled.replace(/\u001b\[[0-9;]*m/g, ""), `F \u2502 ${DEFAULT_STATUS_BADGES["cursor-fast"]?.icon} Fast`);
 	assert.match(enabled, /\u001b\[2m/, "plain Fast takes the badge color");
 
 	const warning = "\u001b[33mFast unavailable\u001b[39m";
@@ -313,7 +313,7 @@ test("a configured badge override reaches the rendered row", async () => {
 	harness.render(80);
 	await waitFor(() => harness.footer.hasFrame);
 	const row = harness.render(80)[0] ?? "";
-	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), "FAKE-CCLINE poteto-mode");
+	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), "FAKE-CCLINE \u2502 poteto-mode");
 	assert.match(row, /\u001b\[2m/, "clearing the icon keeps the configured color");
 	harness.footer.dispose();
 });

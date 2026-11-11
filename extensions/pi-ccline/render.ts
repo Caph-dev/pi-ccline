@@ -108,7 +108,10 @@ export function mergeStatusIntoLastLine(lines: string[], status: string | null, 
 	const safeWidth = Math.max(1, Math.floor(width));
 	if (visibleWidth(status) > safeWidth) return null;
 	const last = lines[lines.length - 1] ?? "";
-	const merged = `${last} ${status}`;
+	// ccline separates its own segments with this bar. A leading space would make
+	// an extension status look attached to the segment before it.
+	const separator = " \u2502 ";
+	const merged = `${last}${separator}${status}`;
 	if (visibleWidth(merged) > safeWidth) return null;
 	return [...lines.slice(0, -1), merged];
 }

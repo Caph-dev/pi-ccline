@@ -167,24 +167,24 @@ test("the badge counts toward the truncated width", () => {
 
 test("a status that still fits is merged into the last ccline line", () => {
 	const lines = ["model 15% · 120k", "main ✓"];
-	assert.deepEqual(mergeStatusIntoLastLine(lines, "poteto-mode", 40), ["model 15% · 120k", "main ✓ poteto-mode"]);
+	assert.deepEqual(mergeStatusIntoLastLine(lines, "poteto-mode", 40), ["model 15% · 120k", "main ✓ │ poteto-mode"]);
 });
 
 test("a merged status keeps the frame untouched when it does not fit", () => {
 	const lines = ["model 15% · 120k"];
 	assert.equal(mergeStatusIntoLastLine(lines, "poteto-mode", 18), null);
 	// One column of room for the separating space is still not enough.
-	assert.equal(mergeStatusIntoLastLine(["123456789012345678"], "x", 19), null);
-	assert.deepEqual(mergeStatusIntoLastLine(["123456789012345678"], "x", 20), ["123456789012345678 x"]);
+	assert.equal(mergeStatusIntoLastLine(["123456789012345678"], "x", 21), null);
+	assert.deepEqual(mergeStatusIntoLastLine(["123456789012345678"], "x", 22), ["123456789012345678 │ x"]);
 });
 
 test("merging measures ANSI styling and wide glyphs by visible width", () => {
 	const lines = [`${RED}${"日".repeat(5)}${RESET}`];
-	const merged = mergeStatusIntoLastLine(lines, `${RED}status${RESET}`, 17);
+	const merged = mergeStatusIntoLastLine(lines, `${RED}status${RESET}`, 19);
 	assert.equal(merged?.length, 1);
-	assert.ok(visibleWidth(merged?.[0] ?? "") <= 17, `visible width was ${visibleWidth(merged?.[0] ?? "")}`);
+	assert.ok(visibleWidth(merged?.[0] ?? "") <= 19, `visible width was ${visibleWidth(merged?.[0] ?? "")}`);
 	// 5 wide glyphs = 10 cells, so 12 cells of room leaves no space for " status".
-	assert.equal(mergeStatusIntoLastLine(lines, "status", 16), null);
+	assert.equal(mergeStatusIntoLastLine(lines, "status", 18), null);
 });
 
 test("merging needs a line to attach to and drops nothing when there is no status", () => {
