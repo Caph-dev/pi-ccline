@@ -14,7 +14,7 @@ import {
 	noticeFrame,
 	withStaleMarker,
 } from "./render.ts";
-import { removeTurnBridge, TurnMeter, writeBridge, type BridgeTool, type TurnTiming } from "./turn.ts";
+import { removeTurnBridge, TurnMeter, writeBridge, type BridgeTool, type ProviderTimingEvent, type TurnTiming } from "./turn.ts";
 
 /** Structural subsets so the footer does not depend on pi-tui internals. */
 type TuiLike = { requestRender(force?: boolean): void };
@@ -26,7 +26,7 @@ type FooterDataLike = {
 };
 
 /** The slice of a pi message event this extension reads. */
-type MessageEventLike = {
+type MessageEventLike = ProviderTimingEvent & {
 	message?: { role?: string | undefined; model?: string | undefined; usage?: { output?: number | undefined } | undefined } | undefined;
 };
 
@@ -196,6 +196,12 @@ export class CclineFooter {
 	onMessageUpdate(event: MessageEventLike): void {
 		if (event.message?.role !== "assistant") return;
 		this.meter.firstDelta(performance.now());
+		const timing = this.meter.observe(event);
+		if (!timing) return;
+		this.lastTiming = timing;
+		this.stats.lastTps = timing.tps;
+		this.flushBridge();
+		this.requestRefresh();
 	}
 
 	/**
@@ -222,7 +228,7 @@ export class CclineFooter {
 		if (!message || message.role !== "assistant") return;
 		// Measurement uses the monotonic clock; only the bridge's freshness
 		// stamp is wall-clock, and the two are never mixed.
-		const timing = this.meter.finish(message.usage?.output, performance.now());
+		const timing = this.meter.finish(message.usage?.output, performance.now(), event);
 		if (!timing) return;
 		this.lastTiming = timing;
 		this.stats.lastTps = timing.tps;

@@ -547,6 +547,54 @@ test("writes ccline's timing bridge from the streamed answer", async () => {
 	}
 });
 
+test("publishes cursor's live speed and keeps tool waits out of it", async () => {
+	const cclineHome = tempDir("pi-ccline-bridge-live-");
+	const previousHome = process.env.CCLINE_HOME;
+	process.env.CCLINE_HOME = cclineHome;
+	try {
+		const binary = fakeBinary("cat > /dev/null; printf 'FAKE-CCLINE\\n'");
+		const { pi, dispatch } = fakePi();
+		piCcline(pi as never, { loadConfig: () => ({ ...DEFAULT_CONFIG, binary }) });
+		const { ctx } = fakeSession({ idle: true, binary });
+		await dispatch("session_start", ctx);
+
+		const assistant = { role: "assistant", model: "cursor", usage: { output: 999 } };
+		const read = () => JSON.parse(readFileSync(join(cclineHome, "bridge", "sess-1.json"), "utf8"));
+		await dispatch("message_start", ctx, { message: assistant });
+		await dispatch("message_update", ctx, {
+			message: assistant,
+			cursorOutputTiming: { outputTokens: 40, source: "estimated", elapsedMs: 1_000, tokensPerSecond: 36 },
+		});
+		assert.equal(read().turn.tps, 36);
+
+		await dispatch("message_update", ctx, {
+			type: "toolcall_start",
+			message: assistant,
+			cursorOutputTiming: { outputTokens: 40, source: "estimated", elapsedMs: 90_000, tokensPerSecond: 1 },
+		});
+		assert.equal(read().turn.tps, 36, "tool execution does not dilute the live speed");
+
+		await dispatch("message_end", ctx, {
+			message: assistant,
+			cursorOutputTiming: {
+				outputTokens: 80,
+				source: "measured",
+				accountingSource: "measured",
+				elapsedMs: 1_000,
+				tokensPerSecond: 36,
+			},
+		});
+		const done = read();
+		assert.equal(done.turn.output_tokens, 80);
+		assert.equal(done.turn.tps, 36);
+		assert.equal(done.turn.duration_ms, 1_000);
+		await dispatch("session_shutdown", ctx);
+	} finally {
+		if (previousHome === undefined) delete process.env.CCLINE_HOME;
+		else process.env.CCLINE_HOME = previousHome;
+	}
+});
+
 test("publishes running tools in the same bridge as the timing", async () => {
 	const cclineHome = tempDir("pi-ccline-bridge-tools-");
 	const previousHome = process.env.CCLINE_HOME;

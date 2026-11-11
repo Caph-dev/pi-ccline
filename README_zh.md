@@ -19,7 +19,7 @@ pi 会话状态 → buildCclineInput() → JSON → ccline（spawn，COLUMNS=当
 | 工作目录 | `ctx.cwd` → `cwd` / `workspace.current_dir` |
 | 上下文百分比 / token 数 | `ctx.getContextUsage()` → 当前上下文（聚合估计值）；**不发会话累计 token** |
 | 缓存命中率 | assistant 消息的 `usage.cacheRead` 除以 `input + cacheRead + cacheWrite`，在分支上累加 → `prompt_cache.hit_ratio`；从第二次请求起才发送 |
-| 输出速度（`tok/s`） | 由 `message_start` → 首个 `message_update` → `message_end` 实测，写入 ccline 的 `bridge/<session>.json` 供 `timing.tps` 读取 |
+| 输出速度（`tok/s`） | 从流事件实测；Cursor 则读取它附带的实时输出计时。结果写入 ccline 的 `bridge/<session>.json` 供 `timing.tps` 读取 |
 | 运行中的工具 | `tool_execution_start` / `tool_execution_end` → 同一个 bridge 文件的 `tools` 数组，供 `activity.tools` 读取 |
 | 成本、会话时长 | assistant 消息 `usage.cost.total` 累加；时长 = 当前时间 − 分支最早 entry |
 | 会话 id / 名称 | `ctx.sessionManager` |
@@ -142,7 +142,7 @@ node --experimental-strip-types scripts/render-once.ts --width 74 --no-provider
 - **5h / 7d 配额段永远为空。** pi 不提供 `rate_limits`，字段整段省略，ccline 自然不显示。
 - **ccline 会写 `~/.claude/ccline/state/`**（会话状态、模型缓存、update.lock）。这是上游行为，扩展无法关闭。另外本扩展会写 `~/.claude/ccline/bridge/<session>.json` 供 `timing.tps` 段使用，会话关闭时删掉。
 - **缓存段只显示命中率。** 冷热状态、TTL 倒计时、miss 次数与原因需要 pi 没有的数据（provider 的缓存过期时间、重建原因），这些字段一律不发；配置里用 `format = "{hit}% hit"` 就只剩这一个数字，而第二次请求之前整段直接消失，而不是谎称 `cold`。
-- **`tok/s` 描述的是最后一次答完的请求，不是滚动平均。** 它按请求实测，只在回答结束时更新（非流式 provider、或只有几个 token 的回答不会产生样本，上一轮的数值会继续显示到下一次更新）。`duration` 和 `tok/s` 没有关系：前者是会话墙钟时长，后者是流式速度。
+- **`tok/s` 按单次请求计算，不是整个会话的滚动平均。** 没有自带输出计时的 provider 在回答结束时更新。Cursor 会在流事件上附带 `cursorOutputTiming`，因此文本或推理增量到达时就会更新，并在工具执行和用量查账期间冻结该值。非流式 provider，或不足 100ms 的样本，不会替换屏幕上的上一个值。`duration` 和 `tok/s` 没有关系：前者是会话墙钟时长，后者是流式速度。
 - **工具段只显示「此刻在跑」的调用。** ccline 只点名最老的两个、其余的折成 `+N`，elapsed 取最老那个的耗时；没有历史、没有单工具耗时、没有输出。带 `parentToolCallId` 的调用（codemode 脚本、工具内部再调工具）不列；子 agent 内部的调用只有 pi 把它交给主扩展时才会出现，目前不会。
 - **依赖外部二进制。** 没有 `ccline` 时 footer 只有一行安装提示；升级 `ccline` 后无需重启扩展，但二进制路径会被缓存到下一次解析（`/pi-ccline on` 或新会话会重算）。
 - **上游兼容性只覆盖已测版本。** ccline 2.0.1 的 `input.rs` 每个字段都是 `Option` + lenient 反序列化，同一大版本内字段换形状一般只会让对应段消失；但大版本之间已经发生过必填字段变化（1.1.x → 2.0.x），升级 ccline 后请用 `scripts/render-once.ts` 复跑一次。

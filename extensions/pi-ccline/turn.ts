@@ -26,6 +26,20 @@ export interface TurnTiming {
 /** Below this the sample says more about jitter than about speed. */
 const MIN_STREAM_MS = 100;
 
+/** Cursor attaches this to each streamed event; its elapsed time already excludes tool and accounting waits. */
+export interface ProviderOutputTiming {
+	outputTokens?: number | undefined;
+	source?: "estimated" | "measured" | undefined;
+	accountingSource?: "measured" | "estimated" | "allocated" | "pending" | "replayed" | "unavailable" | undefined;
+	elapsedMs?: number | undefined;
+	tokensPerSecond?: number | undefined;
+}
+
+interface ProviderTimingEvent {
+	type?: string | undefined;
+	cursorOutputTiming?: ProviderOutputTiming | undefined;
+}
+
 /**
  * ccline resolves its data dir from `CCLINE_HOME`, falling back to
  * `~/.claude/ccline`; the bridge lives in a `bridge` subdirectory of either.
@@ -135,11 +149,35 @@ export class TurnMeter {
 	private startedAt: number | null = null;
 	private firstDeltaAt: number | null = null;
 	private model: string | undefined;
+	private providerTiming: TurnTiming | null = null;
 
 	start(model: string | undefined, nowMs: number): void {
 		this.startedAt = nowMs;
 		this.firstDeltaAt = null;
 		this.model = model;
+		this.providerTiming = null;
+	}
+
+	/**
+	 * A provider-owned streaming reading. Tool boundaries freeze the last
+	 * reading: their own timestamps include execution wait, not generation.
+	 */
+	observe(event: ProviderTimingEvent): TurnTiming | null {
+		if (this.startedAt === null) return null;
+		if (event.type?.startsWith("toolcall_")) return this.providerTiming;
+		const reading = event.cursorOutputTiming;
+		const tps = reading?.tokensPerSecond;
+		if (!reading || typeof tps !== "number" || !Number.isFinite(tps) || tps <= 0) return this.providerTiming;
+		const output = typeof reading.outputTokens === "number" && Number.isFinite(reading.outputTokens) ? reading.outputTokens : 0;
+		const elapsed = typeof reading.elapsedMs === "number" && Number.isFinite(reading.elapsedMs) ? reading.elapsedMs : 0;
+		if (output <= 0 || elapsed < MIN_STREAM_MS) return this.providerTiming;
+		this.providerTiming = {
+			model: this.model,
+			tps,
+			durationMs: elapsed,
+			outputTokens: output,
+		};
+		return this.providerTiming;
 	}
 
 	firstDelta(nowMs: number): void {
@@ -148,13 +186,22 @@ export class TurnMeter {
 	}
 
 	/** The answer finished; null when the sample cannot describe a speed. */
-	finish(outputTokens: unknown, nowMs: number): TurnTiming | null {
+	finish(outputTokens: unknown, nowMs: number, event?: ProviderTimingEvent): TurnTiming | null {
+		const providerTiming = this.observe(event ?? {});
 		const startedAt = this.startedAt;
 		const firstDeltaAt = this.firstDeltaAt;
 		const model = this.model;
 		this.startedAt = null;
 		this.firstDeltaAt = null;
 		this.model = undefined;
+		this.providerTiming = null;
+		if (providerTiming) {
+			const reading = event?.cursorOutputTiming;
+			if (reading?.source === "measured" && reading.accountingSource === "measured" && typeof reading.outputTokens === "number") {
+				return { ...providerTiming, outputTokens: reading.outputTokens };
+			}
+			return providerTiming;
+		}
 		if (startedAt === null || firstDeltaAt === null) return null;
 
 		const output = typeof outputTokens === "number" && Number.isFinite(outputTokens) ? outputTokens : 0;
