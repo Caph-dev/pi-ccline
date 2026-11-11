@@ -71,6 +71,9 @@ export const DEFAULT_STATUS_BADGES: Record<string, StatusBadge> = {
 	// to match the text it normally sits next to, and only the icon is painted so
 	// the warning state keeps its own color.
 	"ssh-remote": { icon: "\uf233", color: "accent" },
+	// pi-cursor-provider publishes plain `Fast` only while fast is enabled. The
+	// unavailable warning colors itself, so only its icon takes this accent.
+	"cursor-fast": { icon: "\uf0e7", color: "accent" },
 };
 
 /** An icon longer than this is a typo or a whole path, not a glyph. */

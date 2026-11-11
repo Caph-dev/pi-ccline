@@ -97,6 +97,14 @@ test("ships a built-in badge for pi-ssh-remote's host line", () => {
 	});
 });
 
+test("ships a built-in bolt for pi-cursor-provider's Fast status", () => {
+	assert.deepEqual(resolveStatusBadges(undefined)["cursor-fast"], { icon: "\uf0e7", color: "accent" });
+	assert.deepEqual(resolveStatusBadges(normalizeConfig({ statusBadges: { "cursor-fast": { color: "success" } } }).statusBadges)["cursor-fast"], {
+		icon: "\uf0e7",
+		color: "success",
+	});
+});
+
 test("badges can be added for other status keys, and unusable entries are dropped", () => {
 	const config = normalizeConfig({
 		statusBadges: {

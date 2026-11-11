@@ -182,8 +182,11 @@ test("appends extension statuses to the last frame line when they fit", async ()
 	assert.deepEqual(harness.render(80), ["FAKE-CCLINE Other status"]);
 
 	// pi repaints on setStatus, so a later change needs no refresh of the frame.
-	statuses.set("cursor-fast", "Cursor fast: on");
-	assert.deepEqual(harness.render(80), ["FAKE-CCLINE Cursor fast: on Other status"]);
+	statuses.set("cursor-fast", "Fast");
+	assert.equal(
+		harness.render(80)[0]?.replace(/\u001b\[[0-9;]*m/g, ""),
+		`FAKE-CCLINE ${DEFAULT_STATUS_BADGES["cursor-fast"]?.icon} Fast Other status`,
+	);
 	statuses.clear();
 	assert.deepEqual(harness.render(80), ["FAKE-CCLINE"]);
 	harness.footer.dispose();
@@ -203,12 +206,12 @@ test("gives a status its own truncated row when the last line leaves no room", a
 });
 
 test("a status added while only the loading notice is up joins that notice", () => {
-	const statuses = new Map([["cursor-fast", "Cursor fast: off"]]);
+	const statuses = new Map([["cursor-fast", "Fast"]]);
 	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'LATE\\n'") }, undefined, statuses);
 	const lines = harness.render(80);
 	assert.equal(lines.length, 1);
 	assert.match(lines[0] ?? "", /ccline/);
-	assert.match(lines[0] ?? "", /Cursor fast: off/);
+	assert.match(lines[0]?.replace(/\u001b\[[0-9;]*m/g, "") ?? "", new RegExp(`${DEFAULT_STATUS_BADGES["cursor-fast"]?.icon} Fast`));
 	harness.footer.dispose();
 });
 
@@ -281,6 +284,22 @@ test("pi-search's plain search row gets the built-in magnifier badge", async () 
 	const row = harness.render(120)[0] ?? "";
 	assert.equal(row.replace(/\u001b\[[0-9;]*m/g, ""), `FAKE-CCLINE ${DEFAULT_STATUS_BADGES.search?.icon} Search | gpt-6-luna | think:high`);
 	assert.match(row, /\u001b\[2m/, "the whole row takes the badge color through theme.fg");
+	harness.footer.dispose();
+});
+
+test("pi-cursor-provider's Fast status gets the built-in bolt", async () => {
+	const statuses = new Map<string, string>([["cursor-fast", "Fast"]]);
+	const harness = attach({ binary: fakeBinary("cat > /dev/null; printf 'F\\n'") }, undefined, statuses);
+	harness.render(80);
+	await waitFor(() => harness.footer.hasFrame);
+	const enabled = harness.render(80)[0] ?? "";
+	assert.equal(enabled.replace(/\u001b\[[0-9;]*m/g, ""), `F ${DEFAULT_STATUS_BADGES["cursor-fast"]?.icon} Fast`);
+	assert.match(enabled, /\u001b\[2m/, "plain Fast takes the badge color");
+
+	const warning = "\u001b[33mFast unavailable\u001b[39m";
+	statuses.set("cursor-fast", warning);
+	const unavailable = harness.render(80)[0] ?? "";
+	assert.ok(unavailable.includes(warning), "the provider keeps the warning color it chose");
 	harness.footer.dispose();
 });
 

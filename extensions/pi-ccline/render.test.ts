@@ -74,10 +74,10 @@ test("stale marker respects ANSI width on the last line", () => {
 
 test("extension statuses become one sorted row like the built-in footer", () => {
 	const statuses = new Map([
-		["cursor-fast", "Cursor fast: on"],
+		["cursor-fast", "Fast"],
 		["alpha", "first"],
 	]);
-	assert.equal(extensionStatusLine(statuses, 80), "first Cursor fast: on");
+	assert.equal(extensionStatusLine(statuses, 80), "first Fast");
 });
 
 test("status text is collapsed to a single line", () => {
